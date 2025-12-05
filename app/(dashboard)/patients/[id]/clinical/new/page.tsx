@@ -23,7 +23,7 @@ export default function NewClinicalValuesPage() {
   const today = new Date().toISOString().split("T")[0];
 
   /* ==========================================================
-     ESTADO DEL FORMULARIO CLÍNICO
+     ESTADO CLÍNICO
   ========================================================== */
   const [clinical, setClinical] = useState<any>({
     date: today,
@@ -48,7 +48,7 @@ export default function NewClinicalValuesPage() {
   });
 
   /* ==========================================================
-     CARGAR PACIENTE
+     CARGA DE PACIENTE
   ========================================================== */
   useEffect(() => {
     async function loadPatient() {
@@ -65,7 +65,7 @@ export default function NewClinicalValuesPage() {
   }, [id]);
 
   /* ==========================================================
-     RECIBIR OFFICE BP Y AMPA DESDE OTRAS PÁGINAS
+     RECIBIR TA DESDE SUBPÁGINAS (OFFICE / AMPA)
   ========================================================== */
   useEffect(() => {
     const officeSys = searchParams.get("office_sys");
@@ -73,7 +73,7 @@ export default function NewClinicalValuesPage() {
     const ampaSys = searchParams.get("ampa_sys");
     const ampaDia = searchParams.get("ampa_dia");
 
-    setClinical((prev: any) => ({
+    setClinical((prev: { office_sys: any; office_dia: any; ampa_sys: any; ampa_dia: any; }) => ({
       ...prev,
       office_sys: officeSys || prev.office_sys,
       office_dia: officeDia || prev.office_dia,
@@ -83,23 +83,20 @@ export default function NewClinicalValuesPage() {
   }, [searchParams]);
 
   /* ==========================================================
-     AUTOMÁTICOS: BMI
+     BMI
   ========================================================== */
   useEffect(() => {
     if (clinical.weight && clinical.height) {
       const h = parseFloat(clinical.height) / 100;
       const bmi = clinical.weight / (h * h);
       if (!isNaN(bmi)) {
-        setClinical((prev: any) => ({
-          ...prev,
-          bmi: bmi.toFixed(1),
-        }));
+        setClinical((prev: any) => ({ ...prev, bmi: bmi.toFixed(1) }));
       }
     }
   }, [clinical.weight, clinical.height]);
 
   /* ==========================================================
-     AUTOMÁTICOS: eGFR
+     eGFR
   ========================================================== */
   useEffect(() => {
     if (!clinical.creatinine || !patient) return;
@@ -116,7 +113,9 @@ export default function NewClinicalValuesPage() {
     const sexFactor = female ? 1.012 : 1;
 
     const egfr =
-      142 * Math.pow(scr / A, B) * Math.pow(0.9938, age) * sexFactor;
+      142 * Math.pow(scr / A, B) *
+      Math.pow(0.9938, age) *
+      sexFactor;
 
     let category = "";
     if (egfr >= 60) category = "G1–G2 (Normal o leve descenso)";
@@ -133,7 +132,7 @@ export default function NewClinicalValuesPage() {
   }, [clinical.creatinine, patient]);
 
   /* ==========================================================
-     AUTOMÁTICOS: ALBUMINURIA CATEGORY
+     ALBUMINURIA
   ========================================================== */
   useEffect(() => {
     const alb = parseFloat(clinical.albuminuria);
@@ -151,14 +150,14 @@ export default function NewClinicalValuesPage() {
   }, [clinical.albuminuria]);
 
   /* ==========================================================
-     GUARDAR — INSERT EN SUPABASE
+     GUARDAR
   ========================================================== */
   async function handleSave(e: any) {
     e.preventDefault();
     setSaving(true);
     setErrorMsg("");
 
-    const payload = {
+    const cleanPayload: Record<string, any> = {
       patient_id: Number(id),
       date: clinical.date || null,
       weight: clinical.weight || null,
@@ -181,22 +180,30 @@ export default function NewClinicalValuesPage() {
       ampa_dia: clinical.ampa_dia || null,
     };
 
+    Object.keys(cleanPayload).forEach(key => {
+      if (cleanPayload[key] === "") cleanPayload[key] = null;
+    });
+
     const { error } = await supabase
       .from("clinical_values")
-      .insert(payload);
+      .insert(cleanPayload);
 
     if (error) {
-      console.error(error);
+      console.error("❌ Supabase error:", error);
       setErrorMsg("Error guardando valores clínicos.");
       setSaving(false);
       return;
     }
 
-    router.push(`/patients/${id}`);
+    /* ======================================================
+       REDIRECCIÓN PROFESIONAL  
+       → fuerza recarga del paciente
+    ====================================================== */
+    router.push(`/patients/${id}?reload=${Date.now()}`);
   }
 
   /* ==========================================================
-     RENDER
+     UI
   ========================================================== */
 
   if (loading) return <p className="p-6">Cargando…</p>;
@@ -204,7 +211,10 @@ export default function NewClinicalValuesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* HEADER */}
+
+      {/* ======================================================
+           HEADER
+      ====================================================== */}
       <div className="flex items-start justify-between border-b pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
@@ -220,28 +230,44 @@ export default function NewClinicalValuesPage() {
           </div>
         </div>
 
-        <Button variant="outline" onClick={() => router.back()}>
-          Cancelar
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* GUARDAR ARRIBA */}
+          <Button
+            type="submit"
+            form="clinical-form"
+            disabled={saving}
+            className="w-40"
+          >
+            {saving ? "Guardando…" : "Guardar"}
+          </Button>
+
+          {/* CANCELAR */}
+          <Button
+            variant="outline"
+            onClick={() => router.back()}
+            className="w-40"
+          >
+            Cancelar
+          </Button>
+        </div>
       </div>
 
-      {/* FORM MAIN */}
+      {/* ======================================================
+           FORM
+      ====================================================== */}
       <Card className="p-6 shadow-sm border-slate-200">
-        <form className="space-y-10" onSubmit={handleSave}>
-          
+        <form id="clinical-form" className="space-y-10" onSubmit={handleSave}>
+
           {/* FECHA */}
           <div className="space-y-2">
             <h2 className="text-lg font-semibold text-slate-800">
               Fecha de la visita
             </h2>
-            <Label className="text-base font-medium">Selecciona fecha *</Label>
             <Input
               type="date"
               required
               value={clinical.date}
-              onChange={(e) =>
-                setClinical({ ...clinical, date: e.target.value })
-              }
+              onChange={e => setClinical({ ...clinical, date: e.target.value })}
             />
           </div>
 
@@ -253,39 +279,32 @@ export default function NewClinicalValuesPage() {
               Exploración física
             </h2>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="space-y-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
                 <Label>Peso (kg)</Label>
                 <Input
                   type="number"
-                  step="0.1"
-                  min="0"
                   value={clinical.weight}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({ ...clinical, weight: e.target.value })
                   }
                 />
               </div>
 
-              <div className="space-y-1">
+              <div>
                 <Label>Talla (cm)</Label>
                 <Input
                   type="number"
-                  min="0"
                   value={clinical.height}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({ ...clinical, height: e.target.value })
                   }
                 />
               </div>
 
-              <div className="space-y-1">
+              <div>
                 <Label>IMC</Label>
-                <Input
-                  readOnly
-                  value={clinical.bmi}
-                  className="bg-slate-100"
-                />
+                <Input readOnly value={clinical.bmi} className="bg-slate-100" />
               </div>
             </div>
           </div>
@@ -299,24 +318,17 @@ export default function NewClinicalValuesPage() {
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-              {/* CONSULTA */}
-              <Card className="p-4 flex flex-col justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-700">
-                    Tensión arterial en consulta
-                  </h3>
-
-                  {clinical.office_sys && clinical.office_dia ? (
-                    <p className="text-xl font-bold text-sky-700 mt-2">
-                      {clinical.office_sys}/{clinical.office_dia} mmHg
-                    </p>
-                  ) : (
-                    <p className="text-slate-400 mt-2 text-sm">
-                      No registrada todavía
-                    </p>
-                  )}
-                </div>
+              <Card className="p-4">
+                <h3 className="font-semibold">En consulta</h3>
+                {clinical.office_sys ? (
+                  <p className="text-xl text-sky-700 font-bold mt-2">
+                    {clinical.office_sys}/{clinical.office_dia} mmHg
+                  </p>
+                ) : (
+                  <p className="text-slate-400 mt-2 text-sm">
+                    No registrada todavía
+                  </p>
+                )}
 
                 <Button
                   variant="outline"
@@ -330,23 +342,17 @@ export default function NewClinicalValuesPage() {
                 </Button>
               </Card>
 
-              {/* AMPA */}
-              <Card className="p-4 flex flex-col justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-700">
-                    Tensión en domicilio (AMPA)
-                  </h3>
-
-                  {clinical.ampa_sys && clinical.ampa_dia ? (
-                    <p className="text-xl font-bold text-sky-700 mt-2">
-                      {clinical.ampa_sys}/{clinical.ampa_dia} mmHg
-                    </p>
-                  ) : (
-                    <p className="text-slate-400 mt-2 text-sm">
-                      No registrada todavía
-                    </p>
-                  )}
-                </div>
+              <Card className="p-4">
+                <h3 className="font-semibold">AMPA</h3>
+                {clinical.ampa_sys ? (
+                  <p className="text-xl text-sky-700 font-bold mt-2">
+                    {clinical.ampa_sys}/{clinical.ampa_dia} mmHg
+                  </p>
+                ) : (
+                  <p className="text-slate-400 mt-2 text-sm">
+                    No registrada todavía
+                  </p>
+                )}
 
                 <Button
                   variant="outline"
@@ -359,7 +365,6 @@ export default function NewClinicalValuesPage() {
                   Añadir AMPA
                 </Button>
               </Card>
-
             </div>
           </div>
 
@@ -367,40 +372,31 @@ export default function NewClinicalValuesPage() {
 
           {/* GLUCOSA */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
+            <h2 className="text-lg font-semibold">
               Glucosa / Metabolismo
             </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>HbA1c (%)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={clinical.hb1ac}
-                  onChange={(e) =>
-                    setClinical({ ...clinical, hb1ac: e.target.value })
-                  }
-                />
-              </div>
-            </div>
+            <Input
+              type="number"
+              value={clinical.hb1ac}
+              onChange={e =>
+                setClinical({ ...clinical, hb1ac: e.target.value })
+              }
+              placeholder="HbA1c (%)"
+            />
           </div>
 
           <Separator />
 
           {/* PERFIL LIPÍDICO */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Perfil lipídico
-            </h2>
-
+            <h2 className="text-lg font-semibold">Perfil lipídico</h2>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <Label>Colesterol total</Label>
                 <Input
                   type="number"
                   value={clinical.total_cholesterol}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({
                       ...clinical,
                       total_cholesterol: e.target.value,
@@ -414,7 +410,7 @@ export default function NewClinicalValuesPage() {
                 <Input
                   type="number"
                   value={clinical.ldl}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({ ...clinical, ldl: e.target.value })
                   }
                 />
@@ -425,7 +421,7 @@ export default function NewClinicalValuesPage() {
                 <Input
                   type="number"
                   value={clinical.hdl}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({ ...clinical, hdl: e.target.value })
                   }
                 />
@@ -436,11 +432,8 @@ export default function NewClinicalValuesPage() {
                 <Input
                   type="number"
                   value={clinical.triglycerides}
-                  onChange={(e) =>
-                    setClinical({
-                      ...clinical,
-                      triglycerides: e.target.value,
-                    })
+                  onChange={e =>
+                    setClinical({ ...clinical, triglycerides: e.target.value })
                   }
                 />
               </div>
@@ -449,20 +442,17 @@ export default function NewClinicalValuesPage() {
 
           <Separator />
 
-          {/* RENAL */}
+          {/* FUNCIÓN RENAL */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Función renal
-            </h2>
+            <h2 className="text-lg font-semibold">Función renal</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label>Creatinina (mg/dL)</Label>
+                <Label>Creatinina</Label>
                 <Input
                   type="number"
-                  step="0.01"
                   value={clinical.creatinine}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({ ...clinical, creatinine: e.target.value })
                   }
                 />
@@ -478,7 +468,7 @@ export default function NewClinicalValuesPage() {
               </div>
 
               <div>
-                <Label>Categoría TFGe</Label>
+                <Label>Categoría</Label>
                 <Input
                   readOnly
                   value={clinical.egfr_category}
@@ -488,21 +478,15 @@ export default function NewClinicalValuesPage() {
             </div>
           </div>
 
-          <Separator />
-
           {/* ALBUMINURIA */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Albuminuria
-            </h2>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label>Albuminuria (mg/g)</Label>
                 <Input
                   type="number"
                   value={clinical.albuminuria}
-                  onChange={(e) =>
+                  onChange={e =>
                     setClinical({
                       ...clinical,
                       albuminuria: e.target.value,
@@ -512,7 +496,7 @@ export default function NewClinicalValuesPage() {
               </div>
 
               <div>
-                <Label>Categoría Albuminuria</Label>
+                <Label>Categoría</Label>
                 <Input
                   readOnly
                   value={clinical.albuminuria_category}
@@ -524,7 +508,7 @@ export default function NewClinicalValuesPage() {
 
           <Separator />
 
-          {/* BOTÓN GUARDAR */}
+          {/* BOTÓN GUARDAR ABAJO */}
           <div className="flex justify-center">
             <Button type="submit" disabled={saving} className="w-48">
               {saving ? "Guardando…" : "Guardar valores"}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,16 +16,14 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-// 🔢 Generar un código de 8 dígitos (editable igualmente)
-const generatePatientCode = () => {
-  return Math.floor(10000000 + Math.random() * 90000000).toString();
-};
-
-// ✔ Validar: SOLO números
+// Solo números permitidos
 const validateCode = (value: string) => /^[0-9]+$/.test(value);
 
-export default function NewPatientPage() {
+export default function EditPatientPage() {
   const router = useRouter();
+  const { id } = useParams();
+
+  const [loading, setLoading] = useState(true);
 
   const [code, setCode] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -35,11 +33,55 @@ export default function NewPatientPage() {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  /* =======================================================
+     CARGAR PACIENTE
+  ======================================================= */
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+
+      // Obtener usuario logueado
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      // Cargar datos del paciente
+      const { data: p, error } = await supabase
+        .from("patients")
+        .select("*")
+        .eq("id_patient", id)
+        .eq("user_id", user.id)
+        .single();
+
+      if (error || !p) {
+        setErrorMsg("No se ha encontrado el paciente.");
+        setLoading(false);
+        return;
+      }
+
+      setCode(p.code || "");
+      setDateOfBirth(p.date_of_birth || "");
+      setSex(p.sex || "");
+      setNotes(p.notes || "");
+
+      setLoading(false);
+    }
+
+    load();
+  }, [id, router]);
+
+  /* =======================================================
+     GUARDAR PACIENTE
+  ======================================================= */
   async function handleSave(e: any) {
     e.preventDefault();
     setErrorMsg("");
 
-    // Obtener médico logueado
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -66,48 +108,54 @@ export default function NewPatientPage() {
 
     setSaving(true);
 
-    // Verificar que el código no exista para este médico
+    // Verificar si otro paciente del mismo médico tiene ese código
     const { data: existing } = await supabase
       .from("patients")
-      .select("code")
+      .select("id_patient")
       .eq("code", code)
       .eq("user_id", user.id)
+      .neq("id_patient", id) // Permitir que el mismo paciente mantenga su código
       .maybeSingle();
 
     if (existing) {
       setSaving(false);
-      setErrorMsg("Ya tienes un paciente con ese código.");
+      setErrorMsg("Ya tienes otro paciente con ese código.");
       return;
     }
 
-    // Insertar paciente
-    const { error } = await supabase.from("patients").insert({
-      user_id: user.id,
-      code,
-      date_of_birth: dateOfBirth,
-      sex,
-      notes,
-    });
+    // Actualizar
+    const { error } = await supabase
+      .from("patients")
+      .update({
+        code,
+        date_of_birth: dateOfBirth,
+        sex,
+        notes,
+      })
+      .eq("id_patient", id)
+      .eq("user_id", user.id);
 
     setSaving(false);
 
     if (error) {
-      setErrorMsg("Error guardando el paciente.");
+      setErrorMsg("Error actualizando el paciente.");
       return;
     }
 
-    router.push("/patients");
+    router.push(`/patients/${id}`);
   }
+
+  if (loading) return <p className="p-6">Cargando…</p>;
 
   return (
     <div className="p-6 flex flex-col gap-6">
       {/* HEADER */}
       <div className="flex justify-between items-start border-b pb-4">
-        <h1 className="text-2xl font-semibold">Nuevo paciente</h1>
+        <h1 className="text-2xl font-semibold">Editar paciente</h1>
 
         <Button
           className="w-32"
-          form="new-patient-form"
+          form="edit-patient-form"
           type="submit"
           disabled={saving}
         >
@@ -117,32 +165,23 @@ export default function NewPatientPage() {
 
       {/* FORM */}
       <Card className="p-6">
-        <form id="new-patient-form" onSubmit={handleSave} className="space-y-6">
+        <form id="edit-patient-form" onSubmit={handleSave} className="space-y-6">
 
           {/* CÓDIGO DEL PACIENTE */}
           <div className="space-y-2">
             <Label className="font-medium">Código del paciente</Label>
-            <div className="flex gap-2">
-              <Input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="12345678"
-                className="font-mono"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCode(generatePatientCode())}
-              >
-                Generar
-              </Button>
-            </div>
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="12345678"
+              className="font-mono"
+            />
             <p className="text-xs text-slate-500">
-              Introduce un identificador numérico (ejemplo: <b>12345678</b>).
+              Identificador numérico del paciente.
             </p>
           </div>
 
-          {/* FECHA DE NACIMIENTO (OBLIGATORIA) */}
+          {/* FECHA NACIMIENTO */}
           <div className="space-y-2">
             <Label className="font-medium">Fecha de nacimiento *</Label>
             <Input
@@ -152,7 +191,7 @@ export default function NewPatientPage() {
             />
           </div>
 
-          {/* SEXO (OBLIGATORIO) */}
+          {/* SEXO */}
           <div className="space-y-2">
             <Label className="font-medium">Sexo *</Label>
             <Select value={sex} onValueChange={setSex}>
@@ -173,7 +212,7 @@ export default function NewPatientPage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full min-h-[120px] p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-              placeholder="Añade información clínica relevante..."
+              placeholder="Información clínica adicional…"
             />
           </div>
 

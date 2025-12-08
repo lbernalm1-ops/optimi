@@ -3,18 +3,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-import {
-  User,
-  Stethoscope,
-  Activity,
-  Edit,
-  Calendar,
-} from "lucide-react";
+import { Edit, Calendar, Info } from "lucide-react";
 
 /* ==========================================================
    UTIL: FORMATEAR FECHAS
@@ -63,12 +56,11 @@ export default function PatientDetail() {
 
   /* ==========================================================
      LOAD DATA
-  ========================================================== */
+========================================================== */
   useEffect(() => {
     async function load() {
       const pid = Number(id);
 
-      // PACIENTE
       const { data: p } = await supabase
         .from("patients")
         .select("*")
@@ -76,7 +68,6 @@ export default function PatientDetail() {
         .single();
       setPatient(p);
 
-      // CONDICIONES
       let { data: c } = await supabase
         .from("conditions")
         .select("*")
@@ -97,13 +88,11 @@ export default function PatientDetail() {
           })
           .select()
           .single();
-
         c = newC;
       }
 
       setConditions(c);
 
-      // DATOS CLÍNICOS
       await loadLatestValues(pid);
       await loadLastVisit(pid);
     }
@@ -172,212 +161,140 @@ export default function PatientDetail() {
     });
   }
 
+  if (!patient || !conditions) return <p className="p-6">Cargando…</p>;
+
   /* ==========================================================
      UI
 ========================================================== */
 
-  if (!patient) return <p className="p-6">Cargando…</p>;
-
   return (
-    <div className="flex flex-col gap-6">
-
-      {/* HEADER */}
-      <div className="flex justify-between items-start border-b pb-4">
-        <div className="flex gap-3">
-          <div className="h-10 w-10 bg-sky-600 text-white rounded-xl flex items-center justify-center">
-            <User className="h-5 w-5" />
-          </div>
-
-          <div>
-            <h1 className="text-xl font-semibold">Paciente {patient.code}</h1>
-            <p className="text-sm text-slate-500">
-              {patient.sex === "female" ? "Femenino" : "Masculino"}
-            </p>
-          </div>
-        </div>
-
-        <Link href="/patients">
-          <Button variant="outline">Volver</Button>
-        </Link>
-      </div>
+    <div className="flex flex-col gap-6 px-4 md:px-6 py-4 bg-slate-50 min-h-screen">
 
       {/* DATOS DEL PACIENTE */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <User className="h-5 w-5 text-sky-600" />
-            Datos del paciente
-          </CardTitle>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/patients/${id}/edit`)}
-          >
-            <Edit className="h-4 w-4 mr-2" /> Editar
-          </Button>
-        </CardHeader>
-
-        <CardContent className="text-sm space-y-1">
-          <Row label="Código" value={patient.code} />
-          <Row
-            label="Sexo"
-            value={patient.sex === "female" ? "Femenino" : "Masculino"}
-          />
-          <Row label="Fecha nacimiento" value={formatDate(patient.date_of_birth)} />
-        </CardContent>
-      </Card>
+      <PremiumCard title="Datos del paciente" onEdit={() => router.push(`/patients/${id}/edit`)}>
+        <Row label="Código" value={patient.pacient_code} />
+        <Row
+          label="Sexo"
+          value={patient.sex === "female" ? "Femenino" : "Masculino"}
+        />
+        <Row label="Fecha nacimiento" value={formatDate(patient.date_of_birth)} />
+      </PremiumCard>
 
       {/* CONDICIONES */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Stethoscope className="h-5 w-5 text-sky-600" />
-            Condiciones
-          </CardTitle>
+      <PremiumCard title="Condiciones" onEdit={() => router.push(`/patients/${id}/conditions`)}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ConditionCard label="HTA" active={conditions.hta}
+            dxYear={conditions.hta_diagnosis_year} treated={conditions.hta_treated} />
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/patients/${id}/conditions`)}
-          >
-            <Edit className="h-4 w-4 mr-2" /> Editar
-          </Button>
-        </CardHeader>
+          <ConditionCard label="Dislipemia" active={conditions.dyslipemia}
+            dxYear={conditions.dyslipemia_diagnosis_year} treated={conditions.dyslipemia_treated} />
 
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {conditions && (
-            <>
-              <ConditionCard
-                label="HTA"
-                active={conditions.hta}
-                dxYear={conditions.hta_diagnosis_year}
-                treated={conditions.hta_treated}
-              />
+          <ConditionCard label="Diabetes" active={conditions.diabetes}
+            dxYear={conditions.diabetes_diagnosis_year} treated={conditions.diabetes_treated} />
 
-              <ConditionCard
-                label="Dislipemia"
-                active={conditions.dyslipemia}
-                dxYear={conditions.dyslipemia_diagnosis_year}
-                treated={conditions.dyslipemia_treated}
-              />
+          <ConditionCard label="Tabaquismo" active={conditions.smoker}
+            dxYear={conditions.smoker_diagnosis_year} treated={conditions.smoker_treated} />
 
-              <ConditionCard
-                label="Diabetes"
-                active={conditions.diabetes}
-                dxYear={conditions.diabetes_diagnosis_year}
-                treated={conditions.diabetes_treated}
-              />
+          <ConditionCard label="ERC" active={conditions.ckd}
+            dxYear={conditions.ckd_diagnosis_year} treated={conditions.ckd_treated} />
 
-              <ConditionCard
-                label="Tabaquismo"
-                active={conditions.smoker}
-                dxYear={conditions.smoker_diagnosis_year}
-                treated={conditions.smoker_treated}
-              />
-
-              <ConditionCard
-                label="ERC"
-                active={conditions.ckd}
-                dxYear={conditions.ckd_diagnosis_year}
-                treated={conditions.ckd_treated}
-              />
-
-              <ConditionCard
-                label="ASCVD (Enfermedad cardiovascular aterosclerótica)"
-                active={conditions.ascvd_history}
-                showExtra={false}
-              />
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ÚLTIMOS VALORES CLÍNICOS */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Activity className="h-5 w-5 text-sky-600" />
-            Últimos valores clínicos
-          </CardTitle>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/patients/${id}/clinical/new`)}
-          >
-            + Nueva visita
-          </Button>
-        </CardHeader>
-
-        <CardContent className="text-sm">
-
-          {/* FECHA ÚLTIMA VISITA */}
-          {lastVisit && (
-            <p className="text-base text-slate-700 mb-3 px-1 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-sky-600" />
-              <span className="font-semibold">Fecha de última visita:</span>
-              {formatDate(lastVisit.date)}
-            </p>
-          )}
-
-          {/* Cabecera tabla */}
-          <div className="grid grid-cols-3 font-semibold border-b py-2">
-            <div>Parámetro</div>
-            <div>Último valor</div>
-            <div>Fecha</div>
-          </div>
-
-          <TableRow
-            label="Tensión arterial consulta"
-            value={
-              latest.taOffice
-                ? `${latest.taOffice.office_sys}/${latest.taOffice.office_dia} mmHg`
-                : ""
-            }
-            date={formatDate(latest.taOffice?.date)}
+          <ConditionCard
+            label="ASCVD"
+            active={conditions.ascvd_history}
+            showExtra={false}
+            tooltip="Enfermedad cardiovascular aterosclerótica"
           />
+        </div>
+      </PremiumCard>
 
-          <TableRow
-            label="Tensión arterial domicilio (AMPA)"
-            value={
-              latest.taAmpa
-                ? `${latest.taAmpa.ampa_sys}/${latest.taAmpa.ampa_dia} mmHg`
-                : ""
-            }
-            date={formatDate(latest.taAmpa?.date)}
-          />
+      {/* ÚLTIMOS VALORES */}
+      <PremiumCard
+        title="Últimos valores clínicos"
+        onEdit={() => router.push(`/patients/${id}/clinical/new`)}
+        editLabel="Nueva visita"
+      >
+        {lastVisit && (
+          <p className="text-base text-slate-700 mb-3 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-sky-600" />
+            <span className="font-semibold">Última visita:</span>
+            {formatDate(lastVisit.date)}
+          </p>
+        )}
 
-          <TableRow
-            label="HbA1c"
-            value={latest.hb?.hb1ac ? `${latest.hb.hb1ac} %` : ""}
-            date={formatDate(latest.hb?.date)}
-          />
+        <div className="grid grid-cols-3 font-semibold border-b py-1.5 bg-slate-100 text-slate-700">
+          <div>Parámetro</div>
+          <div>Último valor</div>
+          <div>Fecha</div>
+        </div>
 
-          <TableRow
-            label="TFGe"
-            value={latest.eg?.egfr ? `${latest.eg.egfr} ml/min` : ""}
-            date={formatDate(latest.eg?.date)}
-          />
+        <TableRow
+          label="Tensión arterial consulta"
+          value={
+            latest.taOffice
+              ? `${latest.taOffice.office_sys}/${latest.taOffice.office_dia} mmHg`
+              : ""
+          }
+          date={formatDate(latest.taOffice?.date)}
+        />
 
-        </CardContent>
-      </Card>
+        <TableRow
+          label="Tensión arterial domicilio (AMPA)"
+          value={
+            latest.taAmpa
+              ? `${latest.taAmpa.ampa_sys}/${latest.taAmpa.ampa_dia} mmHg`
+              : ""
+          }
+          date={formatDate(latest.taAmpa?.date)}
+        />
+
+        <TableRow
+          label="HbA1c"
+          value={latest.hb?.hb1ac ? `${latest.hb.hb1ac} %` : ""}
+          date={formatDate(latest.hb?.date)}
+        />
+
+        <TableRow
+          label="TFGe"
+          value={latest.eg?.egfr ? `${latest.eg.egfr} ml/min` : ""}
+          date={formatDate(latest.eg?.date)}
+        />
+      </PremiumCard>
     </div>
   );
 }
 
 /* ==========================================================
-   COMPONENTES PEQUEÑOS
+   PREMIUM CARD (compacta suave)
 ========================================================== */
 
-function Row({ label, value }: { label: string; value: any }) {
+function PremiumCard({
+  title,
+  onEdit,
+  editLabel = "Editar",
+  children,
+}: any) {
   return (
-    <div className="flex justify-between">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
+    <Card className="shadow-sm hover:shadow-md transition rounded-xl border-slate-200 bg-white">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 pb-2">
+        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-sky-900 tracking-wide">
+          {title}
+        </CardTitle>
+
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Edit className="h-4 w-4 mr-2" /> {editLabel}
+        </Button>
+      </CardHeader>
+
+      <CardContent className="text-base space-y-2 py-3">
+        {children}
+      </CardContent>
+    </Card>
   );
 }
+
+/* ==========================================================
+   CONDITION CARD (compacta suave)
+========================================================== */
 
 function ConditionCard({
   label,
@@ -385,48 +302,77 @@ function ConditionCard({
   dxYear,
   treated,
   showExtra = true,
+  tooltip,
 }: {
   label: string;
   active: boolean;
   dxYear?: number | null;
   treated?: boolean;
   showExtra?: boolean;
+  tooltip?: string;
 }) {
   const years = calcYearsFromDxYear(dxYear);
 
   return (
     <div
-      className={`p-3 border rounded-lg w-full ${
-        active
-          ? "bg-sky-100 border-sky-400"
-          : "bg-slate-50 border-slate-200"
-      }`}
+      className={`
+        relative p-4 rounded-xl border transition-all duration-300
+        flex flex-col items-center justify-center text-center gap-2
+        shadow-sm hover:shadow-md
+        ${active ? "bg-sky-50 border-sky-300" : "bg-white border-slate-200"}
+      `}
+      style={{ minHeight: "105px" }}
     >
       <p
-        className={`font-semibold ${
-          active ? "text-sky-900" : "text-slate-500"
-        }`}
+        className={`
+          text-base font-semibold flex items-center justify-center gap-2 tracking-wide
+          ${active ? "text-sky-900" : "text-slate-500"}
+        `}
       >
         {label}: {active ? "Sí" : "No"}
+
+        {tooltip && (
+          <span className="group relative">
+            <Info className="w-4 h-4 text-slate-400" />
+            <span className="
+              absolute left-1/2 -translate-x-1/2 mt-2 w-48 text-xs
+              p-2 rounded-md bg-black/80 text-white opacity-0 group-hover:opacity-100
+              transition-all duration-200 pointer-events-none shadow-lg
+            ">
+              {tooltip}
+            </span>
+          </span>
+        )}
       </p>
 
       {active && showExtra && (
-        <>
-          <p className="text-xs text-slate-700">Años de evolución: {years || "—"}</p>
-          <p className="text-xs text-slate-700">
-            Tratamiento: {treated ? "Sí" : "No"}
-          </p>
-        </>
+        <div className="space-y-1 text-slate-600 text-sm">
+          <p><span className="font-medium text-slate-700">Años:</span> {years || "—"}</p>
+          <p><span className="font-medium text-slate-700">Tratamiento:</span> {treated ? "Sí" : "No"}</p>
+        </div>
       )}
+    </div>
+  );
+}
+
+/* ==========================================================
+   ROW Y TABLA COMPACTA SUAVE
+========================================================== */
+
+function Row({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="flex justify-between text-base">
+      <span className="text-slate-500">{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
 
 function TableRow({ label, value, date }: any) {
   return (
-    <div className="grid grid-cols-3 py-2 border-b last:border-b-0">
-      <div className="text-slate-600">{label}</div>
-      <div className="font-medium">{value}</div>
+    <div className="grid grid-cols-3 py-2.5 border-b last:border-b-0 hover:bg-slate-50 transition">
+      <div className="text-slate-700">{label}</div>
+      <div className="font-medium text-sky-900">{value}</div>
       <div className="text-slate-500">{date}</div>
     </div>
   );

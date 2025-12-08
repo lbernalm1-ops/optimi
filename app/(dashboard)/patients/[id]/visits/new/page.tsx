@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 
-export default function NewClinicalValuesPage() {
+export default function NewVisitPage() {
   const { id } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -41,6 +41,7 @@ export default function NewClinicalValuesPage() {
     egfr_category: "",
     albuminuria: "",
     albuminuria_category: "",
+    proBNP: "",
     office_sys: "",
     office_dia: "",
     ampa_sys: "",
@@ -48,7 +49,7 @@ export default function NewClinicalValuesPage() {
   });
 
   /* ==========================================================
-     CARGA DE PACIENTE
+     CARGA PACIENTE
   ========================================================== */
   useEffect(() => {
     async function loadPatient() {
@@ -65,7 +66,7 @@ export default function NewClinicalValuesPage() {
   }, [id]);
 
   /* ==========================================================
-     RECIBIR TA DESDE SUBPÁGINAS (OFFICE / AMPA)
+     RECIBIR TA DESDE SUBPÁGINAS
   ========================================================== */
   useEffect(() => {
     const officeSys = searchParams.get("office_sys");
@@ -87,8 +88,8 @@ export default function NewClinicalValuesPage() {
   ========================================================== */
   useEffect(() => {
     if (clinical.weight && clinical.height) {
-      const h = parseFloat(clinical.height) / 100;
-      const bmi = clinical.weight / (h * h);
+      const hMeters = parseFloat(clinical.height) / 100;
+      const bmi = clinical.weight / (hMeters * hMeters);
       if (!isNaN(bmi)) {
         setClinical((prev: any) => ({ ...prev, bmi: bmi.toFixed(1) }));
       }
@@ -157,7 +158,7 @@ export default function NewClinicalValuesPage() {
     setSaving(true);
     setErrorMsg("");
 
-    const cleanPayload: Record<string, any> = {
+    const payload = {
       patient_id: Number(id),
       date: clinical.date || null,
       weight: clinical.weight || null,
@@ -170,6 +171,7 @@ export default function NewClinicalValuesPage() {
       hb1ac: clinical.hb1ac || null,
       creatinine: clinical.creatinine || null,
       potassium: clinical.potassium || null,
+      proBNP: clinical.proBNP || null,
       egfr: clinical.egfr || null,
       egfr_category: clinical.egfr_category || null,
       albuminuria: clinical.albuminuria || null,
@@ -180,25 +182,20 @@ export default function NewClinicalValuesPage() {
       ampa_dia: clinical.ampa_dia || null,
     };
 
-    Object.keys(cleanPayload).forEach(key => {
-      if (cleanPayload[key] === "") cleanPayload[key] = null;
+    Object.keys(payload).forEach((key) => {
+      const k = key as keyof typeof payload;
+      if (payload[k] === "") payload[k] = null;
     });
 
-    const { error } = await supabase
-      .from("clinical_values")
-      .insert(cleanPayload);
+    const { error } = await supabase.from("clinical_values").insert(payload);
 
     if (error) {
-      console.error("❌ Supabase error:", error);
+      console.error(error);
       setErrorMsg("Error guardando valores clínicos.");
       setSaving(false);
       return;
     }
 
-    /* ======================================================
-       REDIRECCIÓN PROFESIONAL  
-       → fuerza recarga del paciente
-    ====================================================== */
     router.push(`/patients/${id}?reload=${Date.now()}`);
   }
 
@@ -212,191 +209,228 @@ export default function NewClinicalValuesPage() {
   return (
     <div className="flex flex-col gap-6">
 
-      {/* ======================================================
-           HEADER
-      ====================================================== */}
+      {/* HEADER */}
       <div className="flex items-start justify-between border-b pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white text-lg shadow-sm">
             ➕
           </div>
+
           <div>
-            <h1 className="text-2xl font-semibold">
-              Nuevo registro clínico — {patient.code}
-            </h1>
-            <p className="text-sm text-slate-500">
-              Introduce valores clínicos actualizados
-            </p>
+            <h1 className="text-2xl font-semibold">Nueva visita — {patient.code}</h1>
+            <p className="text-sm text-slate-500">Introduce los valores clínicos</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* GUARDAR ARRIBA */}
           <Button
             type="submit"
-            form="clinical-form"
+            form="visit-form"
             disabled={saving}
-            className="w-40"
+            className="w-40 bg-sky-600 hover:bg-sky-700 text-white rounded-lg shadow-sm py-2 h-auto"
           >
             {saving ? "Guardando…" : "Guardar"}
           </Button>
 
-          {/* CANCELAR */}
           <Button
             variant="outline"
             onClick={() => router.back()}
-            className="w-40"
+            className="w-40 py-2 h-auto rounded-lg"
           >
             Cancelar
           </Button>
         </div>
       </div>
 
-      {/* ======================================================
-           FORM
-      ====================================================== */}
+      {/* FORM */}
       <Card className="p-6 shadow-sm border-slate-200">
-        <form id="clinical-form" className="space-y-10" onSubmit={handleSave}>
+        <form id="visit-form" className="space-y-10" onSubmit={handleSave}>
 
           {/* FECHA */}
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Fecha de la visita
-            </h2>
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-slate-800">Fecha</h2>
             <Input
               type="date"
               required
               value={clinical.date}
-              onChange={e => setClinical({ ...clinical, date: e.target.value })}
+              onChange={(e) =>
+                setClinical({ ...clinical, date: e.target.value })
+              }
             />
           </div>
 
           <Separator />
 
-          {/* EXPLORACIÓN FÍSICA */}
+          {/* ==========================
+              ANTROPOMETRÍA
+          ========================== */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Exploración física
-            </h2>
+            <h2 className="text-lg font-semibold">Antropometría</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label>Peso (kg)</Label>
+                <Label className="mb-1">Peso (kg)</Label>
                 <Input
                   type="number"
                   value={clinical.weight}
-                  onChange={e =>
+                  onChange={(e) =>
                     setClinical({ ...clinical, weight: e.target.value })
                   }
                 />
               </div>
 
               <div>
-                <Label>Talla (cm)</Label>
+                <Label className="mb-1">IMC</Label>
+                <Input readOnly value={clinical.bmi} className="bg-slate-100" />
+              </div>
+
+              <div>
+                <Label className="mb-1">Talla (cm)</Label>
                 <Input
                   type="number"
                   value={clinical.height}
-                  onChange={e =>
+                  onChange={(e) =>
                     setClinical({ ...clinical, height: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* ==========================
+              CARDIOVASCULAR
+          ========================== */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Cardiovascular</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              <div>
+                <Label className="mb-1">TA sistólica / diastólica</Label>
+                <Card className="p-3 text-sm">
+                  {clinical.office_sys ? (
+                    <p className="text-sky-700 font-bold text-lg">
+                      {clinical.office_sys}/{clinical.office_dia} mmHg
+                    </p>
+                  ) : (
+                    <p className="text-slate-400">No registrada</p>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    className="w-full mt-3 py-1.5 text-xs rounded-lg"
+                    type="button"
+                    onClick={() =>
+                      router.push(`/patients/${id}/clinical/new/office`)
+                    }
+                  >
+                    Añadir TA consulta
+                  </Button>
+                </Card>
+              </div>
+
+              <div>
+                <Label className="mb-1">TA AMPA</Label>
+                <Card className="p-3 text-sm">
+                  {clinical.ampa_sys ? (
+                    <p className="text-sky-700 font-bold text-lg">
+                      {clinical.ampa_sys}/{clinical.ampa_dia} mmHg
+                    </p>
+                  ) : (
+                    <p className="text-slate-400">No registrada</p>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    className="w-full mt-3 py-1.5 text-xs rounded-lg"
+                    type="button"
+                    onClick={() =>
+                      router.push(`/patients/${id}/clinical/new/ampa`)
+                    }
+                  >
+                    Añadir AMPA
+                  </Button>
+                </Card>
+              </div>
+
+              <div>
+                <Label className="mb-1">proBNP (pg/mL)</Label>
+                <Input
+                  type="number"
+                  value={clinical.proBNP}
+                  onChange={(e) =>
+                    setClinical({ ...clinical, proBNP: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* ==========================
+              METABÓLICO
+          ========================== */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Metabólico</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+              <div>
+                <Label className="mb-1">HbA1c (%)</Label>
+                <Input
+                  type="number"
+                  value={clinical.hb1ac}
+                  onChange={(e) =>
+                    setClinical({ ...clinical, hb1ac: e.target.value })
                   }
                 />
               </div>
 
               <div>
-                <Label>IMC</Label>
-                <Input readOnly value={clinical.bmi} className="bg-slate-100" />
+                <Label className="mb-1">LDL (mg/dL)</Label>
+                <Input
+                  type="number"
+                  value={clinical.ldl}
+                  onChange={(e) =>
+                    setClinical({ ...clinical, ldl: e.target.value })
+                  }
+                />
               </div>
-            </div>
-          </div>
 
-          <Separator />
-
-          {/* TENSIÓN ARTERIAL */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">
-              Tensión arterial
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="p-4">
-                <h3 className="font-semibold">En consulta</h3>
-                {clinical.office_sys ? (
-                  <p className="text-xl text-sky-700 font-bold mt-2">
-                    {clinical.office_sys}/{clinical.office_dia} mmHg
-                  </p>
-                ) : (
-                  <p className="text-slate-400 mt-2 text-sm">
-                    No registrada todavía
-                  </p>
-                )}
-
-                <Button
-                  variant="outline"
-                  className="w-full mt-4"
-                  type="button"
-                  onClick={() =>
-                    router.push(`/patients/${id}/clinical/new/office`)
-                  }
-                >
-                  Añadir tensión en consulta
-                </Button>
-              </Card>
-
-              <Card className="p-4">
-                <h3 className="font-semibold">AMPA</h3>
-                {clinical.ampa_sys ? (
-                  <p className="text-xl text-sky-700 font-bold mt-2">
-                    {clinical.ampa_sys}/{clinical.ampa_dia} mmHg
-                  </p>
-                ) : (
-                  <p className="text-slate-400 mt-2 text-sm">
-                    No registrada todavía
-                  </p>
-                )}
-
-                <Button
-                  variant="outline"
-                  className="w-full mt-4"
-                  type="button"
-                  onClick={() =>
-                    router.push(`/patients/${id}/clinical/new/ampa`)
-                  }
-                >
-                  Añadir AMPA
-                </Button>
-              </Card>
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* GLUCOSA */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">
-              Glucosa / Metabolismo
-            </h2>
-            <Input
-              type="number"
-              value={clinical.hb1ac}
-              onChange={e =>
-                setClinical({ ...clinical, hb1ac: e.target.value })
-              }
-              placeholder="HbA1c (%)"
-            />
-          </div>
-
-          <Separator />
-
-          {/* PERFIL LIPÍDICO */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Perfil lipídico</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <Label>Colesterol total</Label>
+                <Label className="mb-1">HDL (mg/dL)</Label>
+                <Input
+                  type="number"
+                  value={clinical.hdl}
+                  onChange={(e) =>
+                    setClinical({ ...clinical, hdl: e.target.value })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="mb-1">Triglicéridos</Label>
+                <Input
+                  type="number"
+                  value={clinical.triglycerides}
+                  onChange={(e) =>
+                    setClinical({
+                      ...clinical,
+                      triglycerides: e.target.value,
+                    })
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="mb-1">Colesterol total</Label>
                 <Input
                   type="number"
                   value={clinical.total_cholesterol}
-                  onChange={e =>
+                  onChange={(e) =>
                     setClinical({
                       ...clinical,
                       total_cholesterol: e.target.value,
@@ -404,71 +438,48 @@ export default function NewClinicalValuesPage() {
                   }
                 />
               </div>
-
-              <div>
-                <Label>LDL</Label>
-                <Input
-                  type="number"
-                  value={clinical.ldl}
-                  onChange={e =>
-                    setClinical({ ...clinical, ldl: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label>HDL</Label>
-                <Input
-                  type="number"
-                  value={clinical.hdl}
-                  onChange={e =>
-                    setClinical({ ...clinical, hdl: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label>Triglicéridos</Label>
-                <Input
-                  type="number"
-                  value={clinical.triglycerides}
-                  onChange={e =>
-                    setClinical({ ...clinical, triglycerides: e.target.value })
-                  }
-                />
-              </div>
             </div>
           </div>
 
           <Separator />
 
-          {/* FUNCIÓN RENAL */}
+          {/* ==========================
+              RENAL
+          ========================== */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Función renal</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
               <div>
-                <Label>Creatinina</Label>
+                <Label className="mb-1">Creatinina (mg/dL)</Label>
                 <Input
                   type="number"
                   value={clinical.creatinine}
-                  onChange={e =>
+                  onChange={(e) =>
                     setClinical({ ...clinical, creatinine: e.target.value })
                   }
                 />
               </div>
 
               <div>
-                <Label>TFGe</Label>
+                <Label className="mb-1">Potasio (mmol/L)</Label>
                 <Input
-                  readOnly
-                  value={clinical.egfr}
-                  className="bg-slate-100"
+                  type="number"
+                  value={clinical.potassium}
+                  onChange={(e) =>
+                    setClinical({ ...clinical, potassium: e.target.value })
+                  }
                 />
               </div>
 
               <div>
-                <Label>Categoría</Label>
+                <Label className="mb-1">TFGe</Label>
+                <Input readOnly value={clinical.egfr} className="bg-slate-100" />
+              </div>
+
+              <div>
+                <Label className="mb-1">Estadio renal</Label>
                 <Input
                   readOnly
                   value={clinical.egfr_category}
@@ -476,27 +487,21 @@ export default function NewClinicalValuesPage() {
                 />
               </div>
             </div>
-          </div>
 
-          {/* ALBUMINURIA */}
-          <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label>Albuminuria (mg/g)</Label>
+                <Label className="mb-1">Albuminuria (mg/g)</Label>
                 <Input
                   type="number"
                   value={clinical.albuminuria}
-                  onChange={e =>
-                    setClinical({
-                      ...clinical,
-                      albuminuria: e.target.value,
-                    })
+                  onChange={(e) =>
+                    setClinical({ ...clinical, albuminuria: e.target.value })
                   }
                 />
               </div>
 
               <div>
-                <Label>Categoría</Label>
+                <Label className="mb-1">Categoría albuminuria</Label>
                 <Input
                   readOnly
                   value={clinical.albuminuria_category}
@@ -508,15 +513,19 @@ export default function NewClinicalValuesPage() {
 
           <Separator />
 
-          {/* BOTÓN GUARDAR ABAJO */}
+          {/* GUARDAR */}
           <div className="flex justify-center">
-            <Button type="submit" disabled={saving} className="w-48">
-              {saving ? "Guardando…" : "Guardar valores"}
+            <Button
+              type="submit"
+              disabled={saving}
+              className="w-48 bg-sky-600 hover:bg-sky-700 text-white rounded-lg shadow-sm py-2 h-auto"
+            >
+              {saving ? "Guardando…" : "Guardar visita"}
             </Button>
           </div>
 
           {errorMsg && (
-            <p className="text-center text-red-600">{errorMsg}</p>
+            <p className="text-center text-red-600 text-sm">{errorMsg}</p>
           )}
         </form>
       </Card>

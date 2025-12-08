@@ -4,23 +4,32 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+
 export default function LoginPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg("");
+    setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg("Email o contraseña incorrectos.");
+      setLoading(false);
       return;
     }
 
@@ -28,32 +37,60 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Login Médico</h1>
+    <div className="flex items-center justify-center min-h-screen bg-slate-100 p-6">
+      <Card className="w-full max-w-md p-6 shadow-md border-slate-200">
+        <CardHeader className="text-center mb-4">
+          <CardTitle className="text-xl font-semibold text-sky-800">
+            Acceso médicos
+          </CardTitle>
+          <p className="text-sm text-slate-500">
+            Introduce tus credenciales para continuar
+          </p>
+        </CardHeader>
 
-      <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", width: 250 }}>
-        <label>Email:</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
 
-        <label>Contraseña:</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                placeholder="medico@ejemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-        <button type="submit" style={{ marginTop: 20 }}>
-          Entrar
-        </button>
+            <div>
+              <Label>Contraseña</Label>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
 
-        {errorMsg && <p style={{ color: "red" }}>{errorMsg}</p>}
-      </form>
+            {errorMsg && (
+              <p className="text-red-600 text-sm text-center">{errorMsg}</p>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full mt-2"
+              disabled={loading}
+            >
+              {loading ? "Accediendo…" : "Entrar"}
+            </Button>
+          </form>
+
+          <p className="text-xs text-center text-slate-500 mt-4">
+            ¿No tienes cuenta? Contacta con el administrador.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

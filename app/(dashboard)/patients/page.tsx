@@ -10,7 +10,7 @@ import { Users, Plus, ArrowRight } from "lucide-react";
 
 type Patient = {
   id_patient: number;
-  code: string;
+  patient_code: string;
   sex: string;
   date_of_birth: string;
 };
@@ -104,7 +104,7 @@ export default function PatientsPage() {
                       className="hover:bg-slate-50 transition"
                     >
                       <td className="py-2 pr-4 font-medium text-slate-800">
-                        {p.code}
+                        {p.patient_code}
                       </td>
                       <td className="py-2 pr-4">
                         {p.sex === "female"

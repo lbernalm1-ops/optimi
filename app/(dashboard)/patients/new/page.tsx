@@ -16,18 +16,15 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-// 🔢 Generar un código de 8 dígitos (editable igualmente)
+// Generar código numérico único (8 dígitos)
 const generatePatientCode = () => {
   return Math.floor(10000000 + Math.random() * 90000000).toString();
 };
 
-// ✔ Validar: SOLO números
-const validateCode = (value: string) => /^[0-9]+$/.test(value);
-
 export default function NewPatientPage() {
   const router = useRouter();
 
-  const [code, setCode] = useState("");
+  const [patient_code, setCode] = useState(generatePatientCode());
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [notes, setNotes] = useState("");
@@ -39,7 +36,9 @@ export default function NewPatientPage() {
     e.preventDefault();
     setErrorMsg("");
 
-    // Obtener médico logueado
+    // ---------------------------------------
+    // Obtener usuario autenticado
+    // ---------------------------------------
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -49,11 +48,9 @@ export default function NewPatientPage() {
       return;
     }
 
-    if (!validateCode(code)) {
-      setErrorMsg("El código solo puede contener números.");
-      return;
-    }
-
+    // ---------------------------------------
+    // Validaciones locales
+    // ---------------------------------------
     if (!dateOfBirth) {
       setErrorMsg("La fecha de nacimiento es obligatoria.");
       return;
@@ -66,36 +63,43 @@ export default function NewPatientPage() {
 
     setSaving(true);
 
-    // Verificar que el código no exista para este médico
+    // ---------------------------------------
+    // Verificar si el código ya existe
+    // (opcional pero recomendado)
+    // ---------------------------------------
     const { data: existing } = await supabase
       .from("patients")
-      .select("code")
-      .eq("code", code)
-      .eq("user_id", user.id)
+      .select("patient_code")
+      .eq("patient_code", patient_code)
       .maybeSingle();
 
     if (existing) {
       setSaving(false);
-      setErrorMsg("Ya tienes un paciente con ese código.");
+      setErrorMsg("Ya existe un paciente con ese código. Genera otro.");
       return;
     }
 
+    // ---------------------------------------
     // Insertar paciente
+    // ---------------------------------------
     const { error } = await supabase.from("patients").insert({
       user_id: user.id,
-      code,
+      patient_code,
       date_of_birth: dateOfBirth,
       sex,
       notes,
+      clinic_id: null, // pacientes personales sin clínica
     });
 
     setSaving(false);
 
     if (error) {
+      console.error("❌ Error guardando paciente:", error);
       setErrorMsg("Error guardando el paciente.");
       return;
     }
 
+    // Redirigir al listado
     router.push("/patients");
   }
 
@@ -119,12 +123,12 @@ export default function NewPatientPage() {
       <Card className="p-6">
         <form id="new-patient-form" onSubmit={handleSave} className="space-y-6">
 
-          {/* CÓDIGO DEL PACIENTE */}
+          {/* CÓDIGO */}
           <div className="space-y-2">
             <Label className="font-medium">Código del paciente</Label>
             <div className="flex gap-2">
               <Input
-                value={code}
+                value={patient_code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="12345678"
                 className="font-mono"
@@ -138,11 +142,11 @@ export default function NewPatientPage() {
               </Button>
             </div>
             <p className="text-xs text-slate-500">
-              Introduce un identificador numérico (ejemplo: <b>12345678</b>).
+              Código numérico de 8 dígitos. Ejemplo: <b>12345678</b>
             </p>
           </div>
 
-          {/* FECHA DE NACIMIENTO (OBLIGATORIA) */}
+          {/* FECHA NACIMIENTO */}
           <div className="space-y-2">
             <Label className="font-medium">Fecha de nacimiento *</Label>
             <Input
@@ -152,7 +156,7 @@ export default function NewPatientPage() {
             />
           </div>
 
-          {/* SEXO (OBLIGATORIO) */}
+          {/* SEXO */}
           <div className="space-y-2">
             <Label className="font-medium">Sexo *</Label>
             <Select value={sex} onValueChange={setSex}>
@@ -162,6 +166,7 @@ export default function NewPatientPage() {
               <SelectContent>
                 <SelectItem value="female">Femenino</SelectItem>
                 <SelectItem value="male">Masculino</SelectItem>
+                <SelectItem value="other">Otro</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -183,6 +188,7 @@ export default function NewPatientPage() {
               {errorMsg}
             </p>
           )}
+
         </form>
       </Card>
     </div>

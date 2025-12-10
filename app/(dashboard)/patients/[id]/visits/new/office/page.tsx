@@ -53,14 +53,9 @@ export default function OfficeBPPage() {
     setBp((prev) => {
       const next = { ...prev, [field]: value };
 
-      if (field === "s1" || field === "d1")
-        validatePair("t1", next.s1, next.d1);
-
-      if (field === "s2" || field === "d2")
-        validatePair("t2", next.s2, next.d2);
-
-      if (field === "s3" || field === "d3")
-        validatePair("t3", next.s3, next.d3);
+      if (field === "s1" || field === "d1") validatePair("t1", next.s1, next.d1);
+      if (field === "s2" || field === "d2") validatePair("t2", next.s2, next.d2);
+      if (field === "s3" || field === "d3") validatePair("t3", next.s3, next.d3);
 
       return next;
     });
@@ -68,7 +63,6 @@ export default function OfficeBPPage() {
 
   const isComplete = (s: string, d: string) => s !== "" && d !== "";
 
-  /* ----------- DETERMINAR SI SE NECESITA T3 ----------- */
   useEffect(() => {
     const t1 = isComplete(bp.s1, bp.d1);
     const t2 = isComplete(bp.s2, bp.d2);
@@ -84,7 +78,6 @@ export default function OfficeBPPage() {
     setShowT3(diffSys > 10);
   }, [bp.s1, bp.d1, bp.s2, bp.d2]);
 
-  /* ----------- CÁLCULO DE LA MEDIA ----------- */
   useEffect(() => {
     const t1 = isComplete(bp.s1, bp.d1);
     const t2 = isComplete(bp.s2, bp.d2);
@@ -93,7 +86,6 @@ export default function OfficeBPPage() {
     let sVals: number[] = [];
     let dVals: number[] = [];
 
-    // Si aparece T3, es obligatoria y solo valen T2 y T3
     if (showT3) {
       if (!t3) {
         setFinalBP("");
@@ -101,14 +93,10 @@ export default function OfficeBPPage() {
       }
       sVals = [Number(bp.s2), Number(bp.s3)];
       dVals = [Number(bp.d2), Number(bp.d3)];
-    }
-    // Si hay T1 + T2 válidas
-    else if (t1 && t2) {
+    } else if (t1 && t2) {
       sVals = [Number(bp.s1), Number(bp.s2)];
       dVals = [Number(bp.d1), Number(bp.d2)];
-    }
-    // Si solo hay T1 válida
-    else if (t1) {
+    } else if (t1) {
       sVals = [Number(bp.s1)];
       dVals = [Number(bp.d1)];
     } else {
@@ -116,13 +104,8 @@ export default function OfficeBPPage() {
       return;
     }
 
-    const meanSys = (
-      sVals.reduce((a, b) => a + b, 0) / sVals.length
-    ).toFixed(0);
-
-    const meanDia = (
-      dVals.reduce((a, b) => a + b, 0) / dVals.length
-    ).toFixed(0);
+    const meanSys = (sVals.reduce((a, b) => a + b, 0) / sVals.length).toFixed(0);
+    const meanDia = (dVals.reduce((a, b) => a + b, 0) / dVals.length).toFixed(0);
 
     setFinalBP(`${meanSys}/${meanDia}`);
   }, [bp, showT3]);
@@ -131,15 +114,16 @@ export default function OfficeBPPage() {
 
   function handleSave() {
     if (!finalBP || hasAnyError) return;
+
     const [sys, dia] = finalBP.split("/");
+
     router.push(
-      `/patients/${id}/clinical/new?office_sys=${sys}&office_dia=${dia}`
+      `/patients/${id}/visits/new?office_sys=${sys}&office_dia=${dia}`
     );
   }
 
   return (
     <div className="p-6 space-y-6">
-      {/* HEADER */}
       <div className="flex justify-between items-start pb-3 border-b">
         <div>
           <h1 className="text-xl font-semibold">TA en consulta</h1>
@@ -153,24 +137,19 @@ export default function OfficeBPPage() {
       </div>
 
       <Card className="p-4 space-y-6 shadow-sm">
-
-        {/* TOMA 1 */}
+        {/* Toma 1 */}
         <div className="space-y-2">
           <Label className="text-sky-700 font-semibold">Toma 1</Label>
           <div className="flex items-center gap-3">
             <Input
-              className={`w-20 h-9 text-center ${
-                errors.t1 ? "border-red-500" : ""
-              }`}
+              className={`w-20 text-center ${errors.t1 ? "border-red-500" : ""}`}
               placeholder="SYS"
               value={bp.s1}
               onChange={(e) => updateField("s1", e.target.value)}
             />
             <span>/</span>
             <Input
-              className={`w-20 h-9 text-center ${
-                errors.t1 ? "border-red-500" : ""
-              }`}
+              className={`w-20 text-center ${errors.t1 ? "border-red-500" : ""}`}
               placeholder="DIA"
               value={bp.d1}
               onChange={(e) => updateField("d1", e.target.value)}
@@ -178,23 +157,19 @@ export default function OfficeBPPage() {
           </div>
         </div>
 
-        {/* TOMA 2 */}
+        {/* Toma 2 */}
         <div className="space-y-2">
-          <Label className="text-sky-800 font-semibold">Toma 2</Label>
+          <Label className="text-sky-700 font-semibold">Toma 2</Label>
           <div className="flex items-center gap-3">
             <Input
-              className={`w-20 h-9 text-center ${
-                errors.t2 ? "border-red-500" : ""
-              }`}
+              className={`w-20 text-center ${errors.t2 ? "border-red-500" : ""}`}
               placeholder="SYS"
               value={bp.s2}
               onChange={(e) => updateField("s2", e.target.value)}
             />
             <span>/</span>
             <Input
-              className={`w-20 h-9 text-center ${
-                errors.t2 ? "border-red-500" : ""
-              }`}
+              className={`w-20 text-center ${errors.t2 ? "border-red-500" : ""}`}
               placeholder="DIA"
               value={bp.d2}
               onChange={(e) => updateField("d2", e.target.value)}
@@ -202,7 +177,7 @@ export default function OfficeBPPage() {
           </div>
         </div>
 
-        {/* TOMA 3 */}
+        {/* Toma 3 */}
         {showT3 && (
           <div className="space-y-2">
             <Label className="text-slate-700 font-semibold">
@@ -210,18 +185,14 @@ export default function OfficeBPPage() {
             </Label>
             <div className="flex items-center gap-3">
               <Input
-                className={`w-20 h-9 text-center ${
-                  errors.t3 ? "border-red-500" : ""
-                }`}
+                className={`w-20 text-center ${errors.t3 ? "border-red-500" : ""}`}
                 placeholder="SYS"
                 value={bp.s3}
                 onChange={(e) => updateField("s3", e.target.value)}
               />
               <span>/</span>
               <Input
-                className={`w-20 h-9 text-center ${
-                  errors.t3 ? "border-red-500" : ""
-                }`}
+                className={`w-20 text-center ${errors.t3 ? "border-red-500" : ""}`}
                 placeholder="DIA"
                 value={bp.d3}
                 onChange={(e) => updateField("d3", e.target.value)}
@@ -231,7 +202,6 @@ export default function OfficeBPPage() {
         )}
       </Card>
 
-      {/* RESULTADO */}
       <div className="text-center text-lg font-bold">
         Resultado:{" "}
         {finalBP ? (
@@ -241,11 +211,11 @@ export default function OfficeBPPage() {
         )}
       </div>
 
-      {/* BOTONES */}
       <div className="flex justify-end gap-3">
         <Button variant="outline" onClick={() => router.back()}>
           Cancelar
         </Button>
+
         <Button
           className="w-40"
           disabled={!finalBP || hasAnyError}
@@ -257,3 +227,4 @@ export default function OfficeBPPage() {
     </div>
   );
 }
+

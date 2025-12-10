@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 
-/* ---------- Tipos ---------- */
 type Aday = {
   dayNumber: number;
   morning1_sys: string;
@@ -42,7 +41,6 @@ export default function AMPAPage() {
   const { id } = useParams();
   const router = useRouter();
 
-  /* -------- Estado AMPA -------- */
   const [days, setDays] = useState<Aday[]>(
     Array.from({ length: 7 }, (_, i) => ({
       dayNumber: i + 1,
@@ -78,9 +76,8 @@ export default function AMPAPage() {
   );
 
   const [ampaFinal, setAmpaFinal] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saving] = useState(false);
 
-  /* -------- Helpers de cálculo -------- */
   const toNum = (v: string) => (v === "" ? NaN : Number(v));
 
   const computeSection = (s1: string, d1: string, s2: string, d2: string) => {
@@ -92,12 +89,11 @@ export default function AMPAPage() {
     const t1Ok = !isNaN(n1s) && !isNaN(n1d);
     const t2Ok = !isNaN(n2s) && !isNaN(n2d);
 
-    if (t1Ok && t2Ok) {
+    if (t1Ok && t2Ok)
       return {
         sys: ((n1s + n2s) / 2).toFixed(0),
         dia: ((n1d + n2d) / 2).toFixed(0),
       };
-    }
 
     if (t1Ok) return { sys: n1s.toFixed(0), dia: n1d.toFixed(0) };
     if (t2Ok) return { sys: n2s.toFixed(0), dia: n2d.toFixed(0) };
@@ -112,6 +108,7 @@ export default function AMPAPage() {
       d.morning2_sys,
       d.morning2_dia
     );
+
     const night = computeSection(
       d.night1_sys,
       d.night1_dia,
@@ -144,7 +141,7 @@ export default function AMPAPage() {
   };
 
   const validatePair = (
-    dayIndex: number,
+    i: number,
     pair: keyof DayErrors,
     sys: string,
     dia: string
@@ -152,64 +149,65 @@ export default function AMPAPage() {
     const err = (sys !== "" && dia === "") || (dia !== "" && sys === "");
     setErrors((prev) => {
       const c = [...prev];
-      c[dayIndex][pair] = err;
+      c[i][pair] = err;
       return c;
     });
   };
 
   const updateValue = <K extends keyof Aday>(
-    dayIndex: number,
+    i: number,
     field: K,
     value: Aday[K]
   ) => {
     setDays((prev) => {
       const copy = [...prev];
-      copy[dayIndex] = { ...copy[dayIndex], [field]: value };
+      copy[i] = { ...copy[i], [field]: value };
 
       if (field.startsWith("morning1"))
-        validatePair(dayIndex, "morning1", copy[dayIndex].morning1_sys, copy[dayIndex].morning1_dia);
-
+        validatePair(i, "morning1", copy[i].morning1_sys, copy[i].morning1_dia);
       if (field.startsWith("morning2"))
-        validatePair(dayIndex, "morning2", copy[dayIndex].morning2_sys, copy[dayIndex].morning2_dia);
-
+        validatePair(i, "morning2", copy[i].morning2_sys, copy[i].morning2_dia);
       if (field.startsWith("night1"))
-        validatePair(dayIndex, "night1", copy[dayIndex].night1_sys, copy[dayIndex].night1_dia);
-
+        validatePair(i, "night1", copy[i].night1_sys, copy[i].night1_dia);
       if (field.startsWith("night2"))
-        validatePair(dayIndex, "night2", copy[dayIndex].night2_sys, copy[dayIndex].night2_dia);
+        validatePair(i, "night2", copy[i].night2_sys, copy[i].night2_dia);
 
-      const avg = computeDay(copy[dayIndex]);
+      const avg = computeDay(copy[i]);
       setDailyAverages((prevAvg) => {
-        const a = [...prevAvg];
-        a[dayIndex] = avg;
-        return a;
+        const arr = [...prevAvg];
+        arr[i] = avg;
+        return arr;
       });
 
       return copy;
     });
   };
 
-  /* -------- AMPA Final (sobre días 2–7) -------- */
   useEffect(() => {
     const validDays = dailyAverages.slice(1);
 
-    const sysValues: number[] = [];
-    const diaValues: number[] = [];
+    const sysVals: number[] = [];
+    const diaVals: number[] = [];
 
     validDays.forEach((d) => {
       if (d.day_sys && d.day_dia) {
-        sysValues.push(+d.day_sys);
-        diaValues.push(+d.day_dia);
+        sysVals.push(+d.day_sys);
+        diaVals.push(+d.day_dia);
       }
     });
 
-    if (sysValues.length === 0) {
+    if (sysVals.length === 0) {
       setAmpaFinal("");
       return;
     }
 
-    const meanSys = (sysValues.reduce((a, b) => a + b, 0) / sysValues.length).toFixed(0);
-    const meanDia = (diaValues.reduce((a, b) => a + b, 0) / diaValues.length).toFixed(0);
+    const meanSys = (
+      sysVals.reduce((a, b) => a + b, 0) / sysVals.length
+    ).toFixed(0);
+
+    const meanDia = (
+      diaVals.reduce((a, b) => a + b, 0) / diaVals.length
+    ).toFixed(0);
 
     setAmpaFinal(`${meanSys}/${meanDia}`);
   }, [dailyAverages]);
@@ -218,36 +216,32 @@ export default function AMPAPage() {
     (e) => e.morning1 || e.morning2 || e.night1 || e.night2
   );
 
-  /* -------- Guardar -------- */
   const handleSave = () => {
     if (!ampaFinal || hasAnyError) return;
+
     const [sys, dia] = ampaFinal.split("/");
-    router.push(`/patients/${id}/clinical/new?ampa_sys=${sys}&ampa_dia=${dia}`);
+
+    router.push(
+      `/patients/${id}/visits/new?ampa_sys=${sys}&ampa_dia=${dia}`
+    );
   };
 
-  /* =======================================================
-     UI — Compactado el espacio + botón Guardar arriba
-  ======================================================= */
   return (
     <div className="p-6 flex flex-col gap-6">
-
-      {/* --- Header con GUARDAR + VOLVER --- */}
       <div className="flex justify-between items-center border-b pb-4">
-        <div className="flex items-center gap-3">
-          <Button
-            className="w-32"
-            disabled={!ampaFinal || hasAnyError || saving}
-            onClick={handleSave}
-          >
-            {saving ? "Guardando…" : "Guardar"}
-          </Button>
+        <Button
+          className="w-32"
+          disabled={!ampaFinal || hasAnyError}
+          onClick={handleSave}
+        >
+          Guardar
+        </Button>
 
-          <Button variant="outline" onClick={() => router.back()}>
-            Volver
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => router.back()}>
+          Volver
+        </Button>
 
-        <div className="text-right">
+        <div>
           <h1 className="text-xl font-semibold">AMPA — Automedida domiciliaria</h1>
           <p className="text-sm text-slate-500">
             Día 1 es de adaptación (no entra en el cálculo final).
@@ -255,17 +249,12 @@ export default function AMPAPage() {
         </div>
       </div>
 
-      {/* --- Días 1–7 --- */}
       {days.map((day, i) => (
-        <Card
-          key={day.dayNumber}
-          className="p-4 shadow-sm space-y-2"   // 👈 COMPACTADO AQUÍ
-        >
-          {/* Header del día */}
+        <Card key={day.dayNumber} className="p-4 shadow-sm space-y-2">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold">
               Día {day.dayNumber}{" "}
-              {day.dayNumber === 1 && (
+              {i === 0 && (
                 <span className="text-slate-400 text-sm">(adaptación)</span>
               )}
             </h2>
@@ -279,101 +268,110 @@ export default function AMPAPage() {
 
           <Separator />
 
-          {/* Mañana / Noche */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            {/* MAÑANA */}
+            {/* Mañana */}
             <div className="bg-sky-50 p-4 rounded-lg space-y-3">
               <h3 className="text-md font-semibold text-sky-700">Mañana</h3>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* T1 */}
-                <div>
-                  <div className="font-bold text-sky-700 text-sm mb-1">T1</div>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      className={`h-8 text-center ${errors[i].morning1 ? "border-red-500" : ""}`}
-                      value={day.morning1_sys}
-                      placeholder="SYS"
-                      onChange={(e) => updateValue(i, "morning1_sys", e.target.value)}
-                    />
-                    <span className="font-bold">/</span>
-                    <Input
-                      className={`h-8 text-center ${errors[i].morning1 ? "border-red-500" : ""}`}
-                      value={day.morning1_dia}
-                      placeholder="DIA"
-                      onChange={(e) => updateValue(i, "morning1_dia", e.target.value)}
-                    />
-                  </div>
+              {/* T1 */}
+              <div>
+                <div className="font-bold text-sky-700 mb-1">T1</div>
+                <div className="flex gap-1">
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].morning1 ? "border-red-500" : ""
+                    }`}
+                    placeholder="SYS"
+                    value={day.morning1_sys}
+                    onChange={(e) => updateValue(i, "morning1_sys", e.target.value)}
+                  />
+                  <span>/</span>
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].morning1 ? "border-red-500" : ""
+                    }`}
+                    placeholder="DIA"
+                    value={day.morning1_dia}
+                    onChange={(e) => updateValue(i, "morning1_dia", e.target.value)}
+                  />
                 </div>
+              </div>
 
-                {/* T2 */}
-                <div>
-                  <div className="font-bold text-sky-700 text-sm mb-1">T2</div>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      className={`h-8 text-center ${errors[i].morning2 ? "border-red-500" : ""}`}
-                      value={day.morning2_sys}
-                      placeholder="SYS"
-                      onChange={(e) => updateValue(i, "morning2_sys", e.target.value)}
-                    />
-                    <span className="font-bold">/</span>
-                    <Input
-                      className={`h-8 text-center ${errors[i].morning2 ? "border-red-500" : ""}`}
-                      value={day.morning2_dia}
-                      placeholder="DIA"
-                      onChange={(e) => updateValue(i, "morning2_dia", e.target.value)}
-                    />
-                  </div>
+              {/* T2 */}
+              <div>
+                <div className="font-bold text-sky-700 mb-1">T2</div>
+                <div className="flex gap-1">
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].morning2 ? "border-red-500" : ""
+                    }`}
+                    placeholder="SYS"
+                    value={day.morning2_sys}
+                    onChange={(e) => updateValue(i, "morning2_sys", e.target.value)}
+                  />
+                  <span>/</span>
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].morning2 ? "border-red-500" : ""
+                    }`}
+                    placeholder="DIA"
+                    value={day.morning2_dia}
+                    onChange={(e) => updateValue(i, "morning2_dia", e.target.value)}
+                  />
                 </div>
               </div>
             </div>
 
-            {/* TARDE / NOCHE */}
+            {/* Noche */}
             <div className="bg-sky-100 p-4 rounded-lg space-y-3">
               <h3 className="text-md font-semibold text-sky-900">Tarde / Noche</h3>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* T1 */}
-                <div>
-                  <div className="font-bold text-sky-900 text-sm mb-1">T1</div>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      className={`h-8 text-center ${errors[i].night1 ? "border-red-500" : ""}`}
-                      value={day.night1_sys}
-                      placeholder="SYS"
-                      onChange={(e) => updateValue(i, "night1_sys", e.target.value)}
-                    />
-                    <span className="font-bold">/</span>
-                    <Input
-                      className={`h-8 text-center ${errors[i].night1 ? "border-red-500" : ""}`}
-                      value={day.night1_dia}
-                      placeholder="DIA"
-                      onChange={(e) => updateValue(i, "night1_dia", e.target.value)}
-                    />
-                  </div>
+              {/* T1 */}
+              <div>
+                <div className="font-bold text-sky-900 mb-1">T1</div>
+                <div className="flex gap-1">
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].night1 ? "border-red-500" : ""
+                    }`}
+                    placeholder="SYS"
+                    value={day.night1_sys}
+                    onChange={(e) => updateValue(i, "night1_sys", e.target.value)}
+                  />
+                  <span>/</span>
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].night1 ? "border-red-500" : ""
+                    }`}
+                    placeholder="DIA"
+                    value={day.night1_dia}
+                    onChange={(e) => updateValue(i, "night1_dia", e.target.value)}
+                  />
                 </div>
+              </div>
 
-                {/* T2 */}
-                <div>
-                  <div className="font-bold text-sky-900 text-sm mb-1">T2</div>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      className={`h-8 text-center ${errors[i].night2 ? "border-red-500" : ""}`}
-                      value={day.night2_sys}
-                      placeholder="SYS"
-                      onChange={(e) => updateValue(i, "night2_sys", e.target.value)}
-                    />
-                    <span className="font-bold">/</span>
-                    <Input
-                      className={`h-8 text-center ${errors[i].night2 ? "border-red-500" : ""}`}
-                      value={day.night2_dia}
-                      placeholder="DIA"
-                      onChange={(e) => updateValue(i, "night2_dia", e.target.value)}
-                    />
-                  </div>
+              {/* T2 */}
+              <div>
+                <div className="font-bold text-sky-900 mb-1">T2</div>
+                <div className="flex gap-1">
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].night2 ? "border-red-500" : ""
+                    }`}
+                    placeholder="SYS"
+                    value={day.night2_sys}
+                    onChange={(e) => updateValue(i, "night2_sys", e.target.value)}
+                  />
+                  <span>/</span>
+                  <Input
+                    className={`h-8 text-center ${
+                      errors[i].night2 ? "border-red-500" : ""
+                    }`}
+                    placeholder="DIA"
+                    value={day.night2_dia}
+                    onChange={(e) => updateValue(i, "night2_dia", e.target.value)}
+                  />
                 </div>
-
               </div>
             </div>
           </div>
@@ -382,35 +380,32 @@ export default function AMPAPage() {
 
       <Separator />
 
-      {/* --- AMPA Final --- */}
-      <div className="flex flex-col items-center gap-2">
-        <p className="text-xl font-bold">
-          AMPA final (días 2–7):{" "}
-          {ampaFinal ? (
-            <span className="text-sky-600">{ampaFinal} mmHg</span>
-          ) : (
-            "—"
-          )}
-        </p>
-
-        {hasAnyError && (
-          <p className="text-red-600 text-sm">
-            Hay tomas incompletas. Revisa las que tienen borde rojo.
-          </p>
+      <div className="text-center text-xl">
+        AMPA final (días 2–7):{" "}
+        {ampaFinal ? (
+          <span className="font-bold text-sky-600">{ampaFinal} mmHg</span>
+        ) : (
+          "—"
         )}
       </div>
 
-      {/* --- Botones inferiores --- */}
-      <div className="flex justify-end gap-4 mt-4">
+      {hasAnyError && (
+        <p className="text-red-600 text-sm text-center">
+          Hay tomas incompletas. Revisa las que tienen borde rojo.
+        </p>
+      )}
+
+      <div className="flex justify-end gap-4">
         <Button variant="outline" onClick={() => router.back()}>
           Cancelar
         </Button>
+
         <Button
           className="w-40"
-          disabled={!ampaFinal || hasAnyError || saving}
+          disabled={!ampaFinal || hasAnyError}
           onClick={handleSave}
         >
-          {saving ? "Guardando…" : "Guardar AMPA"}
+          Guardar AMPA
         </Button>
       </div>
     </div>

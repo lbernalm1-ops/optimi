@@ -12,30 +12,56 @@ export default function EditClinicPage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
-  async function loadClinic() {
-    setLoading(true);
+  // -------------------------------------------------------
+  // Cargar clínica + validar permisos
+  // -------------------------------------------------------
+  useEffect(() => {
+    async function load() {
+      if (!id) return;
 
-    const { data, error } = await supabase
-      .from("clinics")
-      .select("*")
-      .eq("id", id)
-      .single();
+      // 1) Usuario autenticado
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error("Error cargando clínica:", error);
-    } else {
-      setName(data.name);
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      // 2) Cargar clínica
+      const { data: clinic, error } = await supabase
+        .from("clinics")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error || !clinic) {
+        setLoading(false);
+        return;
+      }
+
+      setName(clinic.name);
+
+      // 3) Validación → SOLO owner puede editar
+      if (clinic.owner_id === user.id) {
+        setIsOwner(true);
+      }
+
+      setLoading(false);
     }
 
-    setLoading(false);
-  }
+    load();
+  }, [id, router]);
 
-  useEffect(() => {
-    loadClinic();
-  }, [id]);
-
+  // -------------------------------------------------------
+  // Guardar cambios
+  // -------------------------------------------------------
   async function saveClinic() {
+    if (!isOwner) return alert("No tienes permisos.");
+
     if (name.trim().length < 3) {
       alert("El nombre debe tener al menos 3 caracteres.");
       return;
@@ -46,7 +72,7 @@ export default function EditClinicPage() {
     const { error } = await supabase
       .from("clinics")
       .update({
-        name,
+        name: name.trim(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
@@ -54,16 +80,28 @@ export default function EditClinicPage() {
     setSaving(false);
 
     if (error) {
-      alert("No tienes permisos para editar esta clínica.");
-      console.error(error);
+      alert("Error guardando cambios.");
+      console.error("Update error:", error);
       return;
     }
 
     router.push(`/clinics/${id}`);
   }
 
+  // -------------------------------------------------------
+  // Renderizado
+  // -------------------------------------------------------
   if (loading) {
     return <p className="text-center py-10 text-slate-500">Cargando…</p>;
+  }
+
+  if (!isOwner) {
+    return (
+      <div className="text-center py-20 text-red-600">
+        <p className="mb-4">No tienes permisos para editar esta clínica.</p>
+        <Button onClick={() => router.push("/clinics")}>Volver</Button>
+      </div>
+    );
   }
 
   return (

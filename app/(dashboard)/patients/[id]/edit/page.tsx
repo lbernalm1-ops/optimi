@@ -16,16 +16,20 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-// Solo números permitidos
+// Validación: solo números
 const validateCode = (value: string) => /^[0-9]+$/.test(value);
 
 export default function EditPatientPage() {
   const router = useRouter();
-  const { id } = useParams();
+
+  // Convertimos params para evitar errores TS
+  const params = useParams();
+  const rawId = params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId || "";
 
   const [loading, setLoading] = useState(true);
 
-  const [code, setCode] = useState("");
+  const [patient_code, setCode] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [notes, setNotes] = useState("");
@@ -40,22 +44,15 @@ export default function EditPatientPage() {
     async function load() {
       setLoading(true);
 
-      // Obtener usuario logueado
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      if (!id) return;
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+      const pid = Number(id);
 
-      // Cargar datos del paciente
+      // Obtener paciente
       const { data: p, error } = await supabase
         .from("patients")
         .select("*")
-        .eq("id_patient", id)
-        .eq("user_id", user.id)
+        .eq("id_patient", pid)
         .single();
 
       if (error || !p) {
@@ -64,7 +61,7 @@ export default function EditPatientPage() {
         return;
       }
 
-      setCode(p.code || "");
+      setCode(p.patient_code || "");
       setDateOfBirth(p.date_of_birth || "");
       setSex(p.sex || "");
       setNotes(p.notes || "");
@@ -73,25 +70,16 @@ export default function EditPatientPage() {
     }
 
     load();
-  }, [id, router]);
+  }, [id]);
 
   /* =======================================================
-     GUARDAR PACIENTE
+     GUARDAR CAMBIOS
   ======================================================= */
   async function handleSave(e: any) {
     e.preventDefault();
     setErrorMsg("");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setErrorMsg("Debes iniciar sesión.");
-      return;
-    }
-
-    if (!validateCode(code)) {
+    if (!validateCode(patient_code)) {
       setErrorMsg("El código solo puede contener números.");
       return;
     }
@@ -108,32 +96,33 @@ export default function EditPatientPage() {
 
     setSaving(true);
 
-    // Verificar si otro paciente del mismo médico tiene ese código
+    const pid = Number(id);
+
+    // Verificar que no exista otro paciente con ese código
     const { data: existing } = await supabase
       .from("patients")
       .select("id_patient")
-      .eq("code", code)
-      .eq("user_id", user.id)
-      .neq("id_patient", id) // Permitir que el mismo paciente mantenga su código
+      .eq("patient_code", patient_code)
+      .neq("id_patient", pid)
       .maybeSingle();
 
     if (existing) {
       setSaving(false);
-      setErrorMsg("Ya tienes otro paciente con ese código.");
+      setErrorMsg("Ya existe otro paciente con ese código.");
       return;
     }
 
-    // Actualizar
+    // Actualizar paciente
     const { error } = await supabase
       .from("patients")
       .update({
-        code,
+        patient_code,
         date_of_birth: dateOfBirth,
         sex,
         notes,
+        updated_at: new Date().toISOString(),
       })
-      .eq("id_patient", id)
-      .eq("user_id", user.id);
+      .eq("id_patient", pid);
 
     setSaving(false);
 
@@ -142,7 +131,7 @@ export default function EditPatientPage() {
       return;
     }
 
-    router.push(`/patients/${id}`);
+    router.push(`/patients/${pid}`);
   }
 
   if (loading) return <p className="p-6">Cargando…</p>;
@@ -167,21 +156,18 @@ export default function EditPatientPage() {
       <Card className="p-6">
         <form id="edit-patient-form" onSubmit={handleSave} className="space-y-6">
 
-          {/* CÓDIGO DEL PACIENTE */}
+          {/* CÓDIGO */}
           <div className="space-y-2">
             <Label className="font-medium">Código del paciente</Label>
             <Input
-              value={code}
+              value={patient_code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="12345678"
               className="font-mono"
             />
-            <p className="text-xs text-slate-500">
-              Identificador numérico del paciente.
-            </p>
           </div>
 
-          {/* FECHA NACIMIENTO */}
+          {/* FECHA */}
           <div className="space-y-2">
             <Label className="font-medium">Fecha de nacimiento *</Label>
             <Input
@@ -201,6 +187,7 @@ export default function EditPatientPage() {
               <SelectContent>
                 <SelectItem value="female">Femenino</SelectItem>
                 <SelectItem value="male">Masculino</SelectItem>
+                <SelectItem value="other">Otro</SelectItem>
               </SelectContent>
             </Select>
           </div>

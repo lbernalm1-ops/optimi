@@ -8,11 +8,14 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
-/* ===========================================================
-   HELPERS
-=========================================================== */
 const THIS_YEAR = new Date().getFullYear();
 
 function calcYearsFromDx(year: number | null) {
@@ -20,82 +23,208 @@ function calcYearsFromDx(year: number | null) {
   return (THIS_YEAR - year).toString();
 }
 
-function calcDxYearFromYears(years: string) {
-  const y = Number(years);
-  if (isNaN(y) || y < 0) return null;
-  return THIS_YEAR - y;
+function cleanConditions(obj: any) {
+  const allowed = [
+    "hta", "hta_treated", "hta_diagnosis_year",
+    "dyslipemia", "dyslipemia_treated", "dyslipemia_diagnosis_year",
+    "diabetes", "diabetes_treated", "diabetes_diagnosis_year",
+    "smoker", "smoker_treated", "smoker_diagnosis_year",
+    "ckd", "ckd_treated", "ckd_diagnosis_year",
+    "ascvd_history"
+  ];
+
+  const out: any = {};
+  allowed.forEach((k) => (out[k] = obj[k] ?? null));
+  return out;
 }
 
-/* ===========================================================
-   MAIN PAGE
-=========================================================== */
+const ConditionBlock = ({
+  label,
+  field,
+  treatedField,
+  dxYearField,
+  active,
+  dxYear,
+  years,
+  treatedValue,
+  inputDisplayValues,
+  setInputDisplayValues,
+  updateField,
+}: {
+  label: string;
+  field: string;
+  treatedField: string;
+  dxYearField: string;
+  active: boolean;
+  dxYear: number | null;
+  years: string;
+  treatedValue: boolean;
+  inputDisplayValues: Record<string, string>;
+  setInputDisplayValues: (fn: (prev: Record<string, string>) => Record<string, string>) => void;
+  updateField: (key: string, value: any) => void;
+}) => {
+  return (
+    <div
+      className={`border rounded-xl p-4 space-y-3 transition
+      ${active ? "bg-sky-100 border-sky-400" : "bg-slate-50 border-slate-200"}
+    `}
+    >
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{label}</h2>
+
+        <Select
+          value={active ? "yes" : "no"}
+          onValueChange={(v) => updateField(field, v === "yes")}
+        >
+          <SelectTrigger className="w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="no">No</SelectItem>
+            <SelectItem value="yes">Sí</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {active && (
+        <div className="border rounded-lg bg-white p-4 pointer-events-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+            {/* AÑO DIAGNÓSTICO — FIX DEFINITIVO */}
+            <div>
+              <Label>Año diagnóstico</Label>
+              <Input
+                type="number"
+                value={inputDisplayValues[dxYearField] ?? (dxYear === null || dxYear === undefined || Number.isNaN(dxYear) ? "" : dxYear.toString())}
+                placeholder="Ej: 2018"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  
+                  // Limit to 4 digits
+                  if (val.length > 4) return;
+                  
+                  setInputDisplayValues((prev) => ({ ...prev, [dxYearField]: val }));
+
+                  if (val === "") {
+                    updateField(dxYearField, null);
+                    return;
+                  }
+
+                  const year = Number(val);
+                  if (!Number.isNaN(year) && year >= 1900 && year <= THIS_YEAR) {
+                    updateField(dxYearField, year);
+                  }
+                }}
+                onBlur={() => {
+                  const val = inputDisplayValues[dxYearField] ?? "";
+                  if (val === "") {
+                    setInputDisplayValues((prev) => {
+                      const next = { ...prev };
+                      delete next[dxYearField];
+                      return next;
+                    });
+                  }
+                }}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label>Años de evolución</Label>
+              <Input
+                readOnly
+                value={years}
+                className="mt-1 bg-slate-100 text-slate-600"
+              />
+            </div>
+
+            <div>
+              <Label>Tratamiento</Label>
+              <Select
+                value={treatedValue ? "yes" : "no"}
+                onValueChange={(v) => updateField(treatedField, v === "yes")}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no">No</SelectItem>
+                  <SelectItem value="yes">Sí</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function EditConditionsPage() {
   const { id } = useParams();
   const router = useRouter();
 
-  const [conditions, setConditions] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [inputDisplayValues, setInputDisplayValues] = useState<Record<string, string>>({});
 
- useEffect(() => {
-  async function load() {
-    const pid = Number(id);
+  const [conditions, setConditions] = useState<any>({
+    hta: false,
+    hta_diagnosis_year: null,
+    hta_treated: false,
 
-    // Intentar cargar condiciones
-    let { data: c } = await supabase
-      .from("conditions")
-      .select("*")
-      .eq("patient_id", pid)
-      .single();
+    dyslipemia: false,
+    dyslipemia_diagnosis_year: null,
+    dyslipemia_treated: false,
 
-    // Si no existen → crearlas con valores por defecto
-    if (!c) {
-      const { data: newC, error } = await supabase
+    diabetes: false,
+    diabetes_diagnosis_year: null,
+    diabetes_treated: false,
+
+    smoker: false,
+    smoker_diagnosis_year: null,
+    smoker_treated: false,
+
+    ckd: false,
+    ckd_diagnosis_year: null,
+    ckd_treated: false,
+
+    ascvd_history: false,
+  });
+
+  useEffect(() => {
+    async function load() {
+      const pid = id;
+
+      let { data: c } = await supabase
         .from("conditions")
-        .insert({
-          patient_id: pid,
-          hta: false,
-          dyslipemia: false,
-          diabetes: false,
-          smoker: false,
-          ckd: false,
-          ascvd_history: false,
-        })
-        .select()
+        .select("*")
+        .eq("patient_id", pid)
         .single();
 
-      if (error) {
-        console.error("Error creando condiciones:", error);
+      if (!c) {
+        const { data: newC } = await supabase
+          .from("conditions")
+          .insert({ patient_id: pid })
+          .select()
+          .single();
+        c = newC;
       }
 
-      c = newC;
+      setConditions((prev: any) => ({
+        ...prev,
+        ...cleanConditions(c),
+      }));
+
+      setLoading(false);
     }
 
-    setConditions(c);
-    setLoading(false);
-  }
+    load();
+  }, [id]);
 
-  load();
-}, [id]);
-
-
-  const updateField = (k: string, v: any) => {
-    setConditions((prev: any) => ({ ...prev, [k]: v }));
-  };
-
-  const updateDx = (conditionKey: string, diagnosisYearKey: string, years: string, year: string) => {
-    // Si modifica el año de diagnóstico → recalcular años
-    if (year !== "") {
-      const numericYear = Number(year);
-      updateField(diagnosisYearKey, numericYear);
-    }
-
-    // Si modifica años → recalcular año de diagnóstico
-    if (years !== "") {
-      const dx = calcDxYearFromYears(years);
-      if (dx) updateField(diagnosisYearKey, dx);
-    }
+  const updateField = (key: string, value: any) => {
+    setConditions((prev: any) => ({ ...prev, [key]: value }));
   };
 
   async function handleSave() {
@@ -103,146 +232,41 @@ export default function EditConditionsPage() {
 
     const { error } = await supabase
       .from("conditions")
-      .update(conditions)
+      .update(cleanConditions(conditions))
       .eq("patient_id", id);
 
     setSaving(false);
 
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    router.push(`/patients/${id}`);
+    if (error) alert(error.message);
+    else router.push(`/patients/${id}`);
   }
 
   if (loading) return <p className="p-6">Cargando…</p>;
-  if (!conditions) return <p>No existen condiciones.</p>;
 
-  /* ===========================================================
-     UI COMPONENT: ConditionBlock
-  =========================================================== */
-  const ConditionBlock = ({
-    label,
-    field,
-    treatedField,
-    dxYearField,
-  }: {
-    label: string;
-    field: string;
-    treatedField: string;
-    dxYearField: string;
-  }) => {
-    const active = conditions[field];
-
-    const dxYear = conditions[dxYearField];
-    const years = dxYear ? calcYearsFromDx(dxYear) : "";
-
-    return (
- <div
-  className={`border rounded-xl p-4 space-y-3 transition-colors
-    ${active ? "bg-sky-100 border-sky-400" : "bg-slate-50 border-slate-200"}
-  `}
->
-        {/* TÍTULO + SELECT PEQUEÑO */}
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-slate-800">{label}</h2>
-
-          <Select
-            value={active ? "yes" : "no"}
-            onValueChange={(v: string) => updateField(field, v === "yes")}
-          >
-            <SelectTrigger className="w-24 text-base font-medium bg-white">
-              <SelectValue placeholder="—" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="no">No</SelectItem>
-              <SelectItem value="yes">Sí</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* SI → EXPANDIR PANEL */}
-        {active && (
-          <div className="border rounded-lg bg-white p-4 transition-all">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-              {/* Año de diagnóstico */}
-              <div>
-                <Label className="text-sm font-medium">Año diagnóstico</Label>
-                <Input
-                  type="number"
-                  value={dxYear || ""}
-                  placeholder="AAAA"
-                  className="mt-1"
-                  onChange={(e) => {
-                    const newYear = e.target.value;
-                    updateDx(field, dxYearField, "", newYear);
-                  }}
-                />
-              </div>
-
-              {/* Años de evolución */}
-              <div>
-                <Label className="text-sm font-medium">Años evolución</Label>
-                <Input
-                  type="number"
-                  value={years}
-                  placeholder="—"
-                  className="mt-1"
-                  onChange={(e) => {
-                    const newYears = e.target.value;
-                    const dx = calcDxYearFromYears(newYears);
-                    if (dx) updateField(dxYearField, dx);
-                  }}
-                />
-              </div>
-
-              {/* Tratamiento */}
-              <div>
-                <Label className="text-sm font-medium">Tratamiento</Label>
-                <Select
-                  value={conditions[treatedField] ? "yes" : "no"}
-                  onValueChange={(v: string) => updateField(treatedField, v === "yes")}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="no">No</SelectItem>
-                    <SelectItem value="yes">Sí</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  /* ===========================================================
-     PAGE UI
-  =========================================================== */
   return (
     <div className="p-6 flex flex-col gap-6">
 
-      {/* HEADER */}
-      <div className="flex justify-between items-start border-b pb-4">
+      <div className="flex justify-between items-center border-b pb-4">
         <h1 className="text-2xl font-semibold">Condiciones clínicas</h1>
-        <Button onClick={handleSave} className="w-32" disabled={saving}>
+
+        <Button onClick={handleSave} disabled={saving}>
           {saving ? "Guardando…" : "Guardar"}
         </Button>
       </div>
 
-      {/* TARJETAS DE CONDICIONES */}
       <Card className="p-6 space-y-6">
-
         <ConditionBlock
           label="HTA"
           field="hta"
           treatedField="hta_treated"
           dxYearField="hta_diagnosis_year"
+          active={conditions.hta}
+          dxYear={conditions.hta_diagnosis_year}
+          years={calcYearsFromDx(conditions.hta_diagnosis_year)}
+          treatedValue={conditions.hta_treated}
+          inputDisplayValues={inputDisplayValues}
+          setInputDisplayValues={setInputDisplayValues}
+          updateField={updateField}
         />
 
         <ConditionBlock
@@ -250,6 +274,13 @@ export default function EditConditionsPage() {
           field="dyslipemia"
           treatedField="dyslipemia_treated"
           dxYearField="dyslipemia_diagnosis_year"
+          active={conditions.dyslipemia}
+          dxYear={conditions.dyslipemia_diagnosis_year}
+          years={calcYearsFromDx(conditions.dyslipemia_diagnosis_year)}
+          treatedValue={conditions.dyslipemia_treated}
+          inputDisplayValues={inputDisplayValues}
+          setInputDisplayValues={setInputDisplayValues}
+          updateField={updateField}
         />
 
         <ConditionBlock
@@ -257,6 +288,13 @@ export default function EditConditionsPage() {
           field="diabetes"
           treatedField="diabetes_treated"
           dxYearField="diabetes_diagnosis_year"
+          active={conditions.diabetes}
+          dxYear={conditions.diabetes_diagnosis_year}
+          years={calcYearsFromDx(conditions.diabetes_diagnosis_year)}
+          treatedValue={conditions.diabetes_treated}
+          inputDisplayValues={inputDisplayValues}
+          setInputDisplayValues={setInputDisplayValues}
+          updateField={updateField}
         />
 
         <ConditionBlock
@@ -264,6 +302,13 @@ export default function EditConditionsPage() {
           field="smoker"
           treatedField="smoker_treated"
           dxYearField="smoker_diagnosis_year"
+          active={conditions.smoker}
+          dxYear={conditions.smoker_diagnosis_year}
+          years={calcYearsFromDx(conditions.smoker_diagnosis_year)}
+          treatedValue={conditions.smoker_treated}
+          inputDisplayValues={inputDisplayValues}
+          setInputDisplayValues={setInputDisplayValues}
+          updateField={updateField}
         />
 
         <ConditionBlock
@@ -271,24 +316,36 @@ export default function EditConditionsPage() {
           field="ckd"
           treatedField="ckd_treated"
           dxYearField="ckd_diagnosis_year"
+          active={conditions.ckd}
+          dxYear={conditions.ckd_diagnosis_year}
+          years={calcYearsFromDx(conditions.ckd_diagnosis_year)}
+          treatedValue={conditions.ckd_treated}
+          inputDisplayValues={inputDisplayValues}
+          setInputDisplayValues={setInputDisplayValues}
+          updateField={updateField}
         />
 
-        {/* ASCVD — solo Sí/No */}
-        <div className="border rounded-xl p-4 bg-slate-50 space-y-2">
-          <h2 className="text-lg font-semibold text-slate-800">ASCVD</h2>
+        <div
+          className={`border rounded-xl p-4 space-y-3 transition
+          ${conditions.ascvd_history ? "bg-sky-100 border-sky-400" : "bg-slate-50 border-slate-200"}
+        `}
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-800">ASCVD</h2>
 
-          <Select
-            value={conditions.ascvd_history ? "yes" : "no"}
-            onValueChange={(v: string) => updateField("ascvd_history", v === "yes")}
-          >
-            <SelectTrigger className="w-24 text-base font-medium bg-white">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="no">No</SelectItem>
-              <SelectItem value="yes">Sí</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select
+              value={conditions.ascvd_history ? "yes" : "no"}
+              onValueChange={(v) => updateField("ascvd_history", v === "yes")}
+            >
+              <SelectTrigger className="w-24 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">No</SelectItem>
+                <SelectItem value="yes">Sí</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
       </Card>

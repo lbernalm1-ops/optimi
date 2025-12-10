@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-import { Calendar, Edit, Eye, ChevronDown, ChevronRight } from "lucide-react";
+import { Edit, Eye, ChevronDown, ChevronRight } from "lucide-react";
 
 /* ==========================================================
    FORMAT DATE
@@ -27,30 +27,34 @@ function formatDate(dateStr?: string) {
 ========================================================== */
 
 export default function PatientVisitsPage() {
-  const { id } = useParams();
+  const params = useParams();
   const router = useRouter();
+
+  const raw = params.id;
+  const id = Array.isArray(raw) ? raw[0] : raw ?? "";
+  const pid = id; // 👈 ahora es UUID correcto
 
   const [visits, setVisits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Estado: qué años están abiertos
   const [openYears, setOpenYears] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     async function load() {
-      const pid = Number(id);
-
-      const { data: v } = await supabase
+      const { data: v, error } = await supabase
         .from("clinical_values")
-        .select("id_value, date")
+        .select("id, measured_at")
         .eq("patient_id", pid)
-        .order("date", { ascending: false });
+        .order("measured_at", { ascending: false });
+
+      if (error) {
+        console.error("Error cargando visitas:", error);
+      }
 
       setVisits(v || []);
 
-      // Abrir por defecto el año actual
       if (v && v.length > 0) {
-        const firstYear = new Date(v[0].date).getFullYear();
+        const firstYear = new Date(v[0].measured_at).getFullYear();
         setOpenYears({ [firstYear]: true });
       }
 
@@ -58,16 +62,13 @@ export default function PatientVisitsPage() {
     }
 
     load();
-  }, [id]);
+  }, [pid]);
 
   if (loading) return <p className="p-6">Cargando…</p>;
 
-  /* ==========================================================
-     GROUP VISITS BY YEAR
-  ========================================================== */
-
+  /* GROUP BY YEAR */
   const grouped = visits.reduce((acc: any, v: any) => {
-    const year = new Date(v.date).getFullYear();
+    const year = new Date(v.measured_at).getFullYear();
     if (!acc[year]) acc[year] = [];
     acc[year].push(v);
     return acc;
@@ -75,11 +76,7 @@ export default function PatientVisitsPage() {
 
   const years = Object.keys(grouped)
     .map(Number)
-    .sort((a, b) => b - a); // años descendentes
-
-  /* ==========================================================
-     UI
-  ========================================================== */
+    .sort((a, b) => b - a);
 
   return (
     <div className="flex flex-col gap-6 px-4 md:px-6 py-4 bg-slate-50 min-h-screen">
@@ -91,8 +88,6 @@ export default function PatientVisitsPage() {
         </h1>
 
         <div className="flex gap-2">
-
-          {/* VER TODAS */}
           <Button
             variant="outline"
             size="sm"
@@ -103,7 +98,6 @@ export default function PatientVisitsPage() {
             Ver todas
           </Button>
 
-          {/* NUEVA VISITA */}
           <Button
             size="sm"
             className="bg-sky-600 hover:bg-sky-700 text-white flex items-center gap-2"
@@ -115,23 +109,18 @@ export default function PatientVisitsPage() {
         </div>
       </div>
 
-      {/* ==========================================================
-         TIMELINE COLAPSABLE POR AÑO
-      ========================================================== */}
+      {/* TIMELINE */}
       <PremiumCard title="Historial de visitas">
         {visits.length === 0 ? (
           <p className="text-slate-500">No hay visitas registradas.</p>
         ) : (
           <div className="relative pl-6">
 
-            {/* Línea vertical del timeline */}
             <div className="absolute left-2 top-0 w-0.5 h-full bg-sky-300"></div>
 
             <div className="space-y-6">
               {years.map((year) => (
                 <div key={year}>
-
-                  {/* ======= CABECERA DE AÑO CON TOGGLE ======= */}
                   <button
                     onClick={() =>
                       setOpenYears((prev) => ({
@@ -149,20 +138,15 @@ export default function PatientVisitsPage() {
                     {year}
                   </button>
 
-                  {/* ======= VISITAS INTERNAS DEL AÑO ======= */}
                   {openYears[year] && (
                     <div className="space-y-6 mt-2">
-
                       {grouped[year].map((v: any) => (
-                        <div key={v.id_value} className="relative">
-
-                          {/* Punto del timeline */}
+                        <div key={v.id} className="relative">
                           <div className="absolute -left-[7px] top-3 w-3 h-3 rounded-full bg-sky-500 border-2 border-white shadow"></div>
 
-                          {/* Tarjeta de visita */}
                           <div className="p-4 rounded-xl border bg-white shadow-sm hover:shadow-md transition flex justify-between items-center">
                             <span className="font-medium text-sky-900 text-base">
-                              {formatDate(v.date)}
+                              {formatDate(v.measured_at)}
                             </span>
 
                             <Button
@@ -170,7 +154,7 @@ export default function PatientVisitsPage() {
                               size="sm"
                               className="flex items-center gap-2 border-slate-300 hover:bg-slate-50"
                               onClick={() =>
-                                router.push(`/patients/${id}/clinical/${v.id_value}`)
+                                router.push(`/patients/${id}/visits/${v.id}/edit`)
                               }
                             >
                               <Eye className="h-4 w-4" />
@@ -179,12 +163,12 @@ export default function PatientVisitsPage() {
                           </div>
                         </div>
                       ))}
-
                     </div>
                   )}
                 </div>
               ))}
             </div>
+
           </div>
         )}
       </PremiumCard>

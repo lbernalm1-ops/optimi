@@ -10,8 +10,32 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 
+type ClinicalState = {
+  date: string;
+  weight: string;
+  height: string;
+  bmi: string;
+  total_cholesterol: string;
+  ldl: string;
+  hdl: string;
+  triglycerides: string;
+  hb1ac: string;
+  creatinine: string;
+  potassium: string;
+  egfr: string;
+  egfr_category: string;
+  albuminuria: string;
+  albuminuria_category: string;
+  proBNP: string;
+  office_sys: string;
+  office_dia: string;
+  ampa_sys: string;
+  ampa_dia: string;
+};
+
 export default function NewVisitPage() {
-  const { id } = useParams();
+  const params = useParams<{ id: string }>();
+  const id = params.id; // UUID correcto
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -22,10 +46,7 @@ export default function NewVisitPage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  /* ==========================================================
-     ESTADO CLÍNICO
-  ========================================================== */
-  const [clinical, setClinical] = useState<any>({
+  const [clinical, setClinical] = useState<ClinicalState>({
     date: today,
     weight: "",
     height: "",
@@ -49,19 +70,22 @@ export default function NewVisitPage() {
   });
 
   /* ==========================================================
-     CARGA PACIENTE
+     CARGAR PACIENTE
   ========================================================== */
   useEffect(() => {
     async function loadPatient() {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("patients")
-        .select("code, date_of_birth, sex")
+        .select("patient_code, date_of_birth, sex")
         .eq("id_patient", id)
         .single();
+
+      if (error) console.error(error);
 
       setPatient(data || null);
       setLoading(false);
     }
+
     loadPatient();
   }, [id]);
 
@@ -74,12 +98,12 @@ export default function NewVisitPage() {
     const ampaSys = searchParams.get("ampa_sys");
     const ampaDia = searchParams.get("ampa_dia");
 
-    setClinical((prev: { office_sys: any; office_dia: any; ampa_sys: any; ampa_dia: any; }) => ({
+    setClinical((prev) => ({
       ...prev,
-      office_sys: officeSys || prev.office_sys,
-      office_dia: officeDia || prev.office_dia,
-      ampa_sys: ampaSys || prev.ampa_sys,
-      ampa_dia: ampaDia || prev.ampa_dia,
+      ...(officeSys !== null && { office_sys: officeSys }),
+      ...(officeDia !== null && { office_dia: officeDia }),
+      ...(ampaSys !== null && { ampa_sys: ampaSys }),
+      ...(ampaDia !== null && { ampa_dia: ampaDia }),
     }));
   }, [searchParams]);
 
@@ -88,10 +112,11 @@ export default function NewVisitPage() {
   ========================================================== */
   useEffect(() => {
     if (clinical.weight && clinical.height) {
-      const hMeters = parseFloat(clinical.height) / 100;
-      const bmi = clinical.weight / (hMeters * hMeters);
-      if (!isNaN(bmi)) {
-        setClinical((prev: any) => ({ ...prev, bmi: bmi.toFixed(1) }));
+      const w = parseFloat(clinical.weight);
+      const h = parseFloat(clinical.height) / 100;
+      if (!isNaN(w) && h > 0) {
+        const bmi = (w / (h * h)).toFixed(1);
+        setClinical((prev) => ({ ...prev, bmi }));
       }
     }
   }, [clinical.weight, clinical.height]);
@@ -114,7 +139,8 @@ export default function NewVisitPage() {
     const sexFactor = female ? 1.012 : 1;
 
     const egfr =
-      142 * Math.pow(scr / A, B) *
+      142 *
+      Math.pow(scr / A, B) *
       Math.pow(0.9938, age) *
       sexFactor;
 
@@ -125,7 +151,7 @@ export default function NewVisitPage() {
     else if (egfr >= 15) category = "G4";
     else category = "G5";
 
-    setClinical((prev: any) => ({
+    setClinical((prev) => ({
       ...prev,
       egfr: egfr.toFixed(0),
       egfr_category: category,
@@ -144,23 +170,25 @@ export default function NewVisitPage() {
     else if (alb < 300) category = "A2 (30–299 mg/g)";
     else category = "A3 (≥300 mg/g)";
 
-    setClinical((prev: any) => ({
+    setClinical((prev) => ({
       ...prev,
       albuminuria_category: category,
     }));
   }, [clinical.albuminuria]);
 
   /* ==========================================================
-     GUARDAR
+     GUARDAR VISITA
   ========================================================== */
-  async function handleSave(e: any) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setErrorMsg("");
 
-    const payload = {
-      patient_id: Number(id),
-      date: clinical.date || null,
+    const payload: Record<string, any> = {
+      patient_id: id, // UUID ✔
+
+      measured_at: clinical.date || null,
+
       weight: clinical.weight || null,
       height: clinical.height || null,
       bmi: clinical.bmi || null,
@@ -171,26 +199,28 @@ export default function NewVisitPage() {
       hb1ac: clinical.hb1ac || null,
       creatinine: clinical.creatinine || null,
       potassium: clinical.potassium || null,
-      proBNP: clinical.proBNP || null,
+      probnp: clinical.proBNP || null, // ✔ columna correcta
       egfr: clinical.egfr || null,
       egfr_category: clinical.egfr_category || null,
       albuminuria: clinical.albuminuria || null,
       albuminuria_category: clinical.albuminuria_category || null,
+
       office_sys: clinical.office_sys || null,
       office_dia: clinical.office_dia || null,
       ampa_sys: clinical.ampa_sys || null,
       ampa_dia: clinical.ampa_dia || null,
     };
 
-    Object.keys(payload).forEach((key) => {
-      const k = key as keyof typeof payload;
+    Object.keys(payload).forEach((k) => {
       if (payload[k] === "") payload[k] = null;
     });
+
+    console.log("PAYLOAD INSERT:", payload);
 
     const { error } = await supabase.from("clinical_values").insert(payload);
 
     if (error) {
-      console.error(error);
+      console.error("❌ Error insert clinical_values:", error);
       setErrorMsg("Error guardando valores clínicos.");
       setSaving(false);
       return;
@@ -217,8 +247,12 @@ export default function NewVisitPage() {
           </div>
 
           <div>
-            <h1 className="text-2xl font-semibold">Nueva visita — {patient.code}</h1>
-            <p className="text-sm text-slate-500">Introduce los valores clínicos</p>
+            <h1 className="text-2xl font-semibold">
+              Nueva visita — {patient.patient_code}
+            </h1>
+            <p className="text-sm text-slate-500">
+              Introduce los valores clínicos
+            </p>
           </div>
         </div>
 
@@ -245,70 +279,72 @@ export default function NewVisitPage() {
       {/* FORM */}
       <Card className="p-6 shadow-sm border-slate-200">
         <form id="visit-form" className="space-y-10" onSubmit={handleSave}>
+  <div className="flex gap-8 items-start">
+<div className="flex gap-8 items-start">
 
-          {/* FECHA */}
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold text-slate-800">Fecha</h2>
-            <Input
-              type="date"
-              required
-              value={clinical.date}
-              onChange={(e) =>
-                setClinical({ ...clinical, date: e.target.value })
-              }
-            />
-          </div>
+  {/* FECHA */}
+  <div className="flex-1">
+    <h2 className="text-lg font-semibold text-slate-800 mb-1">Fecha</h2>
+    <div className="h-4"></div> {/* Espaciador para alinear con los labels */}
+    <Input
+      type="date"
+      required
+      value={clinical.date}
+      onChange={(e) =>
+        setClinical({ ...clinical, date: e.target.value })
+      }
+    />
+  </div>
+
+  {/* ANTROPOMETRÍA */}
+  <div className="flex-1">
+    <h2 className="text-lg font-semibold mb-1">Antropometría</h2>
+
+    <div className="flex gap-4">
+      <div className="flex flex-col">
+        <Label className="mb-1">Peso (kg)</Label>
+        <Input
+          type="number"
+          value={clinical.weight}
+          onChange={(e) =>
+            setClinical({ ...clinical, weight: e.target.value })
+          }
+        />
+      </div>
+
+      <div className="flex flex-col">
+        <Label className="mb-1">Talla (cm)</Label>
+        <Input
+          type="number"
+          value={clinical.height}
+          onChange={(e) =>
+            setClinical({ ...clinical, height: e.target.value })
+          }
+        />
+      </div>
+
+      <div className="flex flex-col">
+        <Label className="mb-1">IMC</Label>
+        <Input readOnly value={clinical.bmi} className="bg-slate-100" />
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+
+</div>
 
           <Separator />
 
-          {/* ==========================
-              ANTROPOMETRÍA
-          ========================== */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Antropometría</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label className="mb-1">Peso (kg)</Label>
-                <Input
-                  type="number"
-                  value={clinical.weight}
-                  onChange={(e) =>
-                    setClinical({ ...clinical, weight: e.target.value })
-                  }
-                />
-              </div>
-
-              <div>
-                <Label className="mb-1">IMC</Label>
-                <Input readOnly value={clinical.bmi} className="bg-slate-100" />
-              </div>
-
-              <div>
-                <Label className="mb-1">Talla (cm)</Label>
-                <Input
-                  type="number"
-                  value={clinical.height}
-                  onChange={(e) =>
-                    setClinical({ ...clinical, height: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* ==========================
-              CARDIOVASCULAR
-          ========================== */}
+          {/* CARDIOVASCULAR */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Cardiovascular</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
               <div>
-                <Label className="mb-1">TA sistólica / diastólica</Label>
+                <Label className="mb-1">TA consulta</Label>
                 <Card className="p-3 text-sm">
                   {clinical.office_sys ? (
                     <p className="text-sky-700 font-bold text-lg">
@@ -323,7 +359,7 @@ export default function NewVisitPage() {
                     className="w-full mt-3 py-1.5 text-xs rounded-lg"
                     type="button"
                     onClick={() =>
-                      router.push(`/patients/${id}/clinical/new/office`)
+                      router.push(`/patients/${id}/visits/new/office`)
                     }
                   >
                     Añadir TA consulta
@@ -347,7 +383,7 @@ export default function NewVisitPage() {
                     className="w-full mt-3 py-1.5 text-xs rounded-lg"
                     type="button"
                     onClick={() =>
-                      router.push(`/patients/${id}/clinical/new/ampa`)
+                      router.push(`/patients/${id}/visits/new/ampa`)
                     }
                   >
                     Añadir AMPA
@@ -370,14 +406,11 @@ export default function NewVisitPage() {
 
           <Separator />
 
-          {/* ==========================
-              METABÓLICO
-          ========================== */}
+          {/* METABÓLICO */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Metabólico</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-
               <div>
                 <Label className="mb-1">HbA1c (%)</Label>
                 <Input
@@ -443,14 +476,11 @@ export default function NewVisitPage() {
 
           <Separator />
 
-          {/* ==========================
-              RENAL
-          ========================== */}
+          {/* RENAL */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Función renal</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-
               <div>
                 <Label className="mb-1">Creatinina (mg/dL)</Label>
                 <Input

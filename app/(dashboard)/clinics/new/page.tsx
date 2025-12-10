@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -9,6 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+// Reglas globales
+import {
+  canUserCreateClinics,
+  maxClinicsAllowed,
+} from "@/lib/clinicRules";
+
 export default function NewClinicPage() {
   const router = useRouter();
 
@@ -16,61 +22,112 @@ export default function NewClinicPage() {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const [profile, setProfile] = useState<any>(null);
+  const [clinicCount, setClinicCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // --------------------------------------------------------
+  // Cargar perfil + número de clínicas creadas
+  // --------------------------------------------------------
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setErrorMsg("Debes iniciar sesión.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("id, role, level, email")
+        .eq("id", user.id)
+        .single();
+
+      setProfile(profileData);
+
+      // contar clínicas creadas
+      const { count } = await supabase
+        .from("clinics")
+        .select("*", { count: "exact", head: true })
+        .eq("owner_id", user.id);
+
+      setClinicCount(count ?? 0);
+      setLoading(false);
+    }
+
+    load();
+  }, []);
+
+  // --------------------------------------------------------
+  // Manejar creación
+  // --------------------------------------------------------
   async function createClinic(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setErrorMsg("");
 
-    // VALIDACIÓN nueva: nombre mínimo 3 caracteres
+    if (!profile) {
+      setErrorMsg("No se pudo obtener tu perfil.");
+      setSaving(false);
+      return;
+    }
+
+    // Validación del nombre
     if (clinicName.trim().length < 3) {
       setErrorMsg("El nombre debe tener al menos 3 caracteres.");
       setSaving(false);
       return;
     }
 
-    // Obtener usuario actual
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // Validación mediante tus reglas globales
+    const canCreate = canUserCreateClinics(profile.level);
+    const max = maxClinicsAllowed(profile.level);
 
-    if (!user) {
-      setErrorMsg("No se ha podido identificar al usuario.");
+    if (!canCreate) {
+      setErrorMsg("Tu plan no permite crear clínicas.");
       setSaving(false);
       return;
     }
 
-    // Insertar clínica con updated_at opcional
+    if (clinicCount >= max) {
+      setErrorMsg(`Solo puedes crear ${max} clínicas con tu plan actual.`);
+      setSaving(false);
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      setErrorMsg("Sesión expirada. Vuelve a iniciar sesión.");
+      setSaving(false);
+      return;
+    }
+
+    // Crear clínica → el trigger insertará al owner en clinic_members
     const { error } = await supabase.from("clinics").insert({
       name: clinicName.trim(),
       owner_id: user.id,
-      updated_at: new Date().toISOString(), // opcional pero recomendado
     });
 
     if (error) {
       console.error("❌ Error creando clínica:", error);
-
-      // Detectamos límite de 3 clínicas por policy RLS
-      if (
-        error.message?.includes("clinics") ||
-        error.code === "42501" ||
-        error.code === "P0001"
-      ) {
-        setErrorMsg("Has alcanzado el número máximo de clínicas permitidas (3).");
-      } else {
-        setErrorMsg("No ha sido posible crear la clínica.");
-      }
-
+      setErrorMsg("Error inesperado al crear la clínica.");
       setSaving(false);
       return;
     }
 
-    // Clínica creada → redirigir
+    // Redirigir al listado
     router.push("/clinics");
   }
 
+  if (loading) return <p className="p-6">Cargando…</p>;
+
   return (
     <div className="px-6 py-6 max-w-2xl mx-auto">
-
       <div className="flex items-center justify-between mb-6 border-b pb-3">
         <h1 className="text-xl font-semibold text-sky-900">
           Crear nueva clínica
@@ -90,7 +147,6 @@ export default function NewClinicPage() {
 
         <CardContent>
           <form onSubmit={createClinic} className="space-y-6">
-
             <div className="space-y-2">
               <Label className="text-sm">Nombre de la clínica</Label>
               <Input

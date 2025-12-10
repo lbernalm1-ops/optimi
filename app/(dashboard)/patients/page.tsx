@@ -13,6 +13,8 @@ type Patient = {
   patient_code: string;
   sex: string;
   date_of_birth: string;
+  clinic_id: string | null;
+  user_id: string;
 };
 
 function getAge(dob: string) {
@@ -23,20 +25,57 @@ function getAge(dob: string) {
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [clinicIds, setClinicIds] = useState<string[]>([]);
 
   useEffect(() => {
-    async function loadPatients() {
-      const { data, error } = await supabase
-        .from("patients")
-        .select("*")
-        .order("id_patient", { ascending: true });
+    async function loadPage() {
+      setLoading(true);
 
-      if (error) console.error(error);
-      setPatients(data || []);
+      // 1. Obtener usuario autenticado
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      setUserId(user.id);
+
+      // 2. Obtener clínicas donde es miembro
+      const { data: memberships } = await supabase
+        .from("clinic_members")
+        .select("clinic_id")
+        .eq("user_id", user.id)
+        .eq("is_active", true);
+
+      const clinicList = memberships?.map((m) => m.clinic_id) ?? [];
+      setClinicIds(clinicList);
+
+      // 3. Obtener pacientes que pueda ver:
+      //    - creados por él
+      //    - o pertenecientes a sus clínicas
+      let query = supabase.from("patients").select("*");
+
+      if (clinicList.length > 0) {
+        query = query.or(
+          `user_id.eq.${user.id},clinic_id.in.(${clinicList.join(",")})`
+        );
+      } else {
+        query = query.eq("user_id", user.id); // solo los suyos
+      }
+
+      const { data: pats, error } = await query.order("id_patient");
+
+      if (error) console.error("Error cargando pacientes:", error);
+
+      setPatients(pats || []);
       setLoading(false);
     }
 
-    loadPatients();
+    loadPage();
   }, []);
 
   return (
@@ -50,7 +89,7 @@ export default function PatientsPage() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Pacientes</h1>
             <p className="text-sm text-slate-500">
-              Gestión y listado de pacientes registrados
+              Gestión de pacientes creados por ti o por tus clínicas
             </p>
           </div>
         </div>
@@ -63,7 +102,7 @@ export default function PatientsPage() {
         </Link>
       </div>
 
-      {/* TARJETA DE TABLA */}
+      {/* LISTA DE PACIENTES */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium text-slate-700">
@@ -80,7 +119,7 @@ export default function PatientsPage() {
 
           {!loading && patients.length === 0 && (
             <p className="py-4 text-sm text-slate-500">
-              No hay pacientes registrados.
+              No hay pacientes creados por ti ni en tus clínicas.
             </p>
           )}
 
@@ -93,6 +132,7 @@ export default function PatientsPage() {
                     <th className="py-2 pr-4">Sexo</th>
                     <th className="py-2 pr-4">Fecha nacimiento</th>
                     <th className="py-2 pr-4">Edad</th>
+                    <th className="py-2 pr-4">Origen</th>
                     <th className="py-2 text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -115,10 +155,13 @@ export default function PatientsPage() {
                       </td>
                       <td className="py-2 pr-4">{p.date_of_birth}</td>
                       <td className="py-2 pr-4">
-                        {p.date_of_birth
-                          ? `${getAge(p.date_of_birth)} años`
-                          : "—"}
+                        {p.date_of_birth ? `${getAge(p.date_of_birth)} años` : "—"}
                       </td>
+
+                      <td className="py-2 pr-4 text-xs text-slate-500">
+                        {p.clinic_id ? "De clínica" : "Privado (solo tú)"}
+                      </td>
+
                       <td className="py-2 pl-4 text-right">
                         <Link href={`/patients/${p.id_patient}`}>
                           <Button
@@ -142,4 +185,3 @@ export default function PatientsPage() {
     </div>
   );
 }
-

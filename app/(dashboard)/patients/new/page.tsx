@@ -16,7 +16,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-// Generar código numérico de 8 dígitos
+// Generar código numérico único (8 dígitos)
 const generatePatientCode = () => {
   return Math.floor(10000000 + Math.random() * 90000000).toString();
 };
@@ -24,7 +24,7 @@ const generatePatientCode = () => {
 export default function NewPatientPage() {
   const router = useRouter();
 
-  const [patient_code, setCode] = useState("");
+  const [patient_code, setCode] = useState(generatePatientCode());
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [notes, setNotes] = useState("");
@@ -36,7 +36,9 @@ export default function NewPatientPage() {
     e.preventDefault();
     setErrorMsg("");
 
-    // Obtener usuario logueado
+    // ---------------------------------------
+    // Obtener usuario autenticado
+    // ---------------------------------------
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -46,7 +48,9 @@ export default function NewPatientPage() {
       return;
     }
 
-
+    // ---------------------------------------
+    // Validaciones locales
+    // ---------------------------------------
     if (!dateOfBirth) {
       setErrorMsg("La fecha de nacimiento es obligatoria.");
       return;
@@ -59,38 +63,43 @@ export default function NewPatientPage() {
 
     setSaving(true);
 
-    // Verificar que el código no exista (global o por usuario)
-/*     const { data: existing } = await supabase
+    // ---------------------------------------
+    // Verificar si el código ya existe
+    // (opcional pero recomendado)
+    // ---------------------------------------
+    const { data: existing } = await supabase
       .from("patients")
       .select("patient_code")
       .eq("patient_code", patient_code)
       .maybeSingle();
- */
-/*     if (existing) {
-      setSaving(false);
-      setErrorMsg("Ya existe un paciente con ese código.");
-      return;
-    } */
 
+    if (existing) {
+      setSaving(false);
+      setErrorMsg("Ya existe un paciente con ese código. Genera otro.");
+      return;
+    }
+
+    // ---------------------------------------
     // Insertar paciente
+    // ---------------------------------------
     const { error } = await supabase.from("patients").insert({
-      user_id: user.id, // sigue siendo obligatorio según tu esquema
+      user_id: user.id,
       patient_code,
       date_of_birth: dateOfBirth,
       sex,
       notes,
-      clinic_id: null, // lo dejo explícito, puedes eliminarlo si quieres
+      clinic_id: null, // pacientes personales sin clínica
     });
 
     setSaving(false);
 
     if (error) {
-      console.error(error);
+      console.error("❌ Error guardando paciente:", error);
       setErrorMsg("Error guardando el paciente.");
       return;
     }
 
-    // ir a listado
+    // Redirigir al listado
     router.push("/patients");
   }
 
@@ -113,7 +122,7 @@ export default function NewPatientPage() {
       {/* FORM */}
       <Card className="p-6">
         <form id="new-patient-form" onSubmit={handleSave} className="space-y-6">
-          
+
           {/* CÓDIGO */}
           <div className="space-y-2">
             <Label className="font-medium">Código del paciente</Label>
@@ -179,6 +188,7 @@ export default function NewPatientPage() {
               {errorMsg}
             </p>
           )}
+
         </form>
       </Card>
     </div>

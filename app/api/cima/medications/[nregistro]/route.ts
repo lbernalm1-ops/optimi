@@ -1,85 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest";
+const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest/medicamento";
 
-/**
- * Normaliza principios activos de CIMA
- */
 function normalizePrincipios(raw: any): any[] {
   if (!raw || !Array.isArray(raw)) return [];
-
   return raw.map((p) => ({
     nombre: p.nombre || "",
-    cantidad: p.cantidad || p.cant || null,
-    unidad: p.unidad || null,
+    cantidad: p.cantidad || p.cant || undefined,
+    unidad: p.unidad || undefined,
   }));
 }
 
-/**
- * Normaliza formas farmacéuticas
- */
 function normalizeFormas(raw: any): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map((f) => f.nombre || f);
-
   if (typeof raw === "string") return [raw];
-
   return [];
 }
 
-/**
- * Normaliza vías de administración
- */
 function normalizeVias(raw: any): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map((v) => v.nombre || v);
-
   if (typeof raw === "string") return [raw];
-
   return [];
 }
 
-/**
- * Normaliza presentaciones
- */
 function normalizePresentaciones(raw: any): any[] {
   if (!raw || !Array.isArray(raw)) return [];
-
   return raw.map((p) => ({
     cn: p.cn || p.codigo || "",
     nombre: p.nombre || "",
+    precio: p.precio || p.pvp || undefined,
+    unidad: p.unidad || undefined,
+    tama: p.tama || undefined,
   }));
 }
 
-/**
- * Normaliza códigos ATC
- */
 function normalizeATC(raw: any): any[] {
   if (!raw || !Array.isArray(raw)) return [];
-
   return raw.map((a) => ({
     codigo: a.codigo || "",
     nombre: a.nombre || "",
   }));
 }
 
-/**
- * Normaliza medicamento completo
- */
-function normalizeMedication(m: any) {
+function normalizeExcipientes(raw: any): string[] {
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw.map((e) => e.nombre || e).filter(Boolean);
+}
+
+function normalizeDetail(m: any) {
   return {
     nregistro: m.nregistro || "",
     nombre: m.nombre || "",
     labtitular: m.labtitular || "",
+    estado: m.estado || m.estadoComercializacion || null,
 
     principiosActivos: normalizePrincipios(m.pactivos || m.principiosActivos),
-    formasFarmaceuticas: normalizeFormas(m.formafarmaceutica || m.formasFarmaceuticas),
+    formasFarmaceuticas: normalizeFormas(m.formasFarmaceuticas || m.formafarmaceutica),
     viasAdministracion: normalizeVias(m.viasAdministracion || m.vias),
-
     presentaciones: normalizePresentaciones(m.dosis || m.presentaciones),
+    excipientes: normalizeExcipientes(m.excipientes),
 
-    atcs: normalizeATC(m.atcs),
-
+    // ATC, receta, flags
+    atc: normalizeATC(m.atcs),
     receta: Boolean(m.receta),
     huerfano: Boolean(m.huerfano),
     biosimilar: Boolean(m.biosimilar),
@@ -87,37 +71,28 @@ function normalizeMedication(m: any) {
     estupefaciente: Boolean(m.estupefaciente),
     triangulo: Boolean(m.triangulo),
     comerc: Boolean(m.comerc),
+
+    // Textos si vienen
+    formaTexto: m.formaFarmaceutica || undefined,
+    viaTexto: m.viaAdministracion || undefined,
+
+    _raw: m,
   };
 }
 
-/**
- * ENDPOINT GET /api/cima/medications
- */
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { nregistro: string } }
+) {
+  const { nregistro } = params;
+  if (!nregistro) {
+    return NextResponse.json(
+      { error: "Falta nregistro" },
+      { status: 400 }
+    );
+  }
 
-  const params = new URLSearchParams();
-
-  // Búsqueda libre
-  const q = searchParams.get("q");
-  if (q) params.set("nombre", q);
-
-  // Filtros reales CIMA
-  const mapParams = ["nombre", "laboratorio", "practiv1", "atc", "cn"];
-  mapParams.forEach((p) => {
-    const v = searchParams.get(p);
-    if (v) params.set(p, v);
-  });
-
-  // Booleans
-  ["receta", "psicotropo", "estupefaciente"].forEach((field) => {
-    const v = searchParams.get(field);
-    if (v === "0" || v === "1") params.set(field, v);
-  });
-
-  params.set("pagina", searchParams.get("page") ?? "1");
-
-  const url = `${CIMA_BASE_URL}/medicamentos?${params.toString()}`;
+  const url = `${CIMA_BASE_URL}?nregistro=${encodeURIComponent(nregistro)}`;
 
   try {
     const res = await fetch(url, {
@@ -127,31 +102,26 @@ export async function GET(req: NextRequest) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: "Error consultando CIMA" },
+        { error: "Error al consultar detalle en CIMA" },
         { status: 502 }
       );
     }
 
     const data = await res.json();
-    const results = data.resultados || [];
-
-    const normalized = results.map((m: any) => normalizeMedication(m));
+    const normalized = normalizeDetail(data);
 
     return NextResponse.json(
       {
         source: "CIMA",
         fetchedAt: new Date().toISOString(),
-        pagina: data.pagina,
-        total: data.total,
-        tamanioPagina: data.tamanioPagina,
-        items: normalized,
+        item: normalized,
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("CIMA ERROR:", error);
+    console.error("[CIMA detalle] Error:", error);
     return NextResponse.json(
-      { error: "Error interno consultando CIMA" },
+      { error: "Error interno consultando detalle" },
       { status: 500 }
     );
   }

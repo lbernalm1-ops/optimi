@@ -1,51 +1,104 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest/medicamento";
 
-const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest";
+/**
+ * Normaliza el estado de suministro retornado por CIMA.
+ */
+function normalizeSupply(m: any) {
+  if (!m) {
+    return { estado: "normal" };
+  }
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
+  // CIMA usa múltiples campos según tipo de medicamento
+  const rawEstado =
+    m.estadoDistribucion ||
+    m.estadoSuministro ||
+    m.estado ||
+    m.suministro ||
+    "";
 
-  const cn = searchParams.get("cn");
+  let estado: "normal" | "amarillo" | "rojo" = "normal";
 
-  const url = cn
-    ? `${CIMA_BASE_URL}/psuministro/${cn}`
-    : `${CIMA_BASE_URL}/psuministro`;
+  const e = String(rawEstado).toLowerCase();
 
+  if (
+    e.includes("desabaste") ||
+    e.includes("interrup") ||
+    e.includes("cese")
+  ) {
+    estado = "rojo";
+  } else if (
+    e.includes("cautelar") ||
+    e.includes("problema") ||
+    e.includes("suministro") ||
+    e.includes("retras")
+  ) {
+    estado = "amarillo";
+  }
+
+  const comentario =
+    m.motivoDesabastecimiento ||
+    m.motivo ||
+    m.comentario ||
+    null;
+
+  const fechaPrevista =
+    m.fechaPrevistaRestablecimiento ||
+    m.fechaPrevista ||
+    null;
+
+  return {
+    estado,
+    comentario: comentario || undefined,
+    fechaPrevista: fechaPrevista || undefined,
+  };
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
+    const { cns } = await req.json();
 
-    if (!res.ok) {
+    if (!Array.isArray(cns) || cns.length === 0) {
       return NextResponse.json(
-        { error: "Error al consultar problemas de suministro en CIMA" },
-        { status: 502 }
+        { error: "Debes enviar un array de CNs." },
+        { status: 400 }
       );
     }
 
-    const data = await res.json();
+    const uniqueCns = [...new Set(cns)];
 
-    // NORMALIZAR: puede ser array o lista dentro del objeto
-    const items = Array.isArray(data) ? data : data?.resultados ?? [];
+    const results: Record<string, any> = {};
 
-    return NextResponse.json(
-      {
-        source: "AEMPS-CIMA",
-        fetchedAt: new Date().toISOString(),
-        count: items.length,
-        items,
-        raw: data,
-      },
-      { status: 200 }
+    // Pedimos CIMA en paralelo para máxima velocidad
+    await Promise.all(
+      uniqueCns.map(async (cn) => {
+        const url = `${CIMA_BASE_URL}?cn=${cn}`;
+
+        try {
+          const res = await fetch(url, {
+            headers: { Accept: "application/json" },
+            next: { revalidate: 600 },
+          });
+
+          if (!res.ok) {
+            results[cn] = { estado: "normal" };
+            return;
+          }
+
+          const data = await res.json();
+          results[cn] = normalizeSupply(data);
+        } catch (err) {
+          results[cn] = { estado: "normal" };
+        }
+      })
     );
-  } catch (error) {
-    console.error("[SUPPLY endpoint] Error:", error);
 
+    return NextResponse.json(results, { status: 200 });
+  } catch (error) {
+    console.error("[CIMA supply] Error:", error);
     return NextResponse.json(
-      { error: "Error interno consultando problemas de suministro" },
+      { error: "Error interno procesando suministro" },
       { status: 500 }
     );
   }

@@ -64,7 +64,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         {/* CONTENT AREA */}
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex h-full max-w-5xl flex-col px-4 py-6 md:px-8">
+          <div className="mx-auto flex h-full max-w-8xl flex-col px-4 py-6 md:px-8">
             {children}
           </div>
         </main>

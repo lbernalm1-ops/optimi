@@ -1,158 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeMedication } from "./normalize";
 
 const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest";
 
 /**
- * Normaliza principios activos de CIMA
- */
-function normalizePrincipios(raw: any): any[] {
-  if (!raw || !Array.isArray(raw)) return [];
-
-  return raw.map((p) => ({
-    nombre: p.nombre || "",
-    cantidad: p.cantidad || p.cant || null,
-    unidad: p.unidad || null,
-  }));
-}
-
-/**
- * Normaliza formas farmacéuticas
- */
-function normalizeFormas(raw: any): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map((f) => f.nombre || f);
-
-  if (typeof raw === "string") return [raw];
-
-  return [];
-}
-
-/**
- * Normaliza vías de administración
- */
-function normalizeVias(raw: any): string[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map((v) => v.nombre || v);
-
-  if (typeof raw === "string") return [raw];
-
-  return [];
-}
-
-/**
- * Normaliza presentaciones
- */
-function normalizePresentaciones(raw: any): any[] {
-  if (!raw || !Array.isArray(raw)) return [];
-
-  return raw.map((p) => ({
-    cn: p.cn || p.codigo || "",
-    nombre: p.nombre || "",
-  }));
-}
-
-/**
- * Normaliza códigos ATC
- */
-function normalizeATC(raw: any): any[] {
-  if (!raw || !Array.isArray(raw)) return [];
-
-  return raw.map((a) => ({
-    codigo: a.codigo || "",
-    nombre: a.nombre || "",
-  }));
-}
-
-/**
- * Normaliza medicamento completo
- */
-function normalizeMedication(m: any) {
-  return {
-    nregistro: m.nregistro || "",
-    nombre: m.nombre || "",
-    labtitular: m.labtitular || "",
-
-    principiosActivos: normalizePrincipios(m.pactivos || m.principiosActivos),
-    formasFarmaceuticas: normalizeFormas(m.formafarmaceutica || m.formasFarmaceuticas),
-    viasAdministracion: normalizeVias(m.viasAdministracion || m.vias),
-
-    presentaciones: normalizePresentaciones(m.dosis || m.presentaciones),
-
-    atcs: normalizeATC(m.atcs),
-
-    receta: Boolean(m.receta),
-    huerfano: Boolean(m.huerfano),
-    biosimilar: Boolean(m.biosimilar),
-    psicotropo: Boolean(m.psicotropo),
-    estupefaciente: Boolean(m.estupefaciente),
-    triangulo: Boolean(m.triangulo),
-    comerc: Boolean(m.comerc),
-  };
-}
-
-/**
- * ENDPOINT GET /api/cima/medications
+ * GET /api/cima/medications
+ * Usa:
+ *  - GET medicamentos → listado
+ *  - GET medicamento → detalle (CN, ATC, docs…)
+ *
+ * Según CIMA REST API v1.23
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
-  const params = new URLSearchParams();
+  const q = searchParams.get("q") ?? "";
+  const page = searchParams.get("page") ?? "1";
 
-  // Búsqueda libre
-  const q = searchParams.get("q");
-  if (q) params.set("nombre", q);
+  if (q.length < 2) {
+    return NextResponse.json(
+      { items: [], total: 0, tamanioPagina: 0 },
+      { status: 200 }
+    );
+  }
 
-  // Filtros reales CIMA
-  const mapParams = ["nombre", "laboratorio", "practiv1", "atc", "cn"];
-  mapParams.forEach((p) => {
-    const v = searchParams.get(p);
-    if (v) params.set(p, v);
-  });
+  /* -------------------------------------------------
+     1️⃣ LISTADO (GET medicamentos)
+     ------------------------------------------------- */
 
-  // Booleans
-  ["receta", "psicotropo", "estupefaciente"].forEach((field) => {
-    const v = searchParams.get(field);
-    if (v === "0" || v === "1") params.set(field, v);
-  });
+  const listParams = new URLSearchParams();
+  listParams.set("nombre", q);
+  listParams.set("pagina", page);
 
-  params.set("pagina", searchParams.get("page") ?? "1");
-
-  const url = `${CIMA_BASE_URL}/medicamentos?${params.toString()}`;
+  const listUrl = `${CIMA_BASE_URL}/medicamentos?${listParams.toString()}`;
 
   try {
-    const res = await fetch(url, {
+    const listRes = await fetch(listUrl, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 300 },
     });
 
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: "Error consultando CIMA" },
-        { status: 502 }
-      );
+    if (!listRes.ok) {
+      throw new Error("Error listando medicamentos");
     }
 
-    const data = await res.json();
-    const results = data.resultados || [];
+    const listData = await listRes.json();
 
-    const normalized = results.map((m: any) => normalizeMedication(m));
+    const items = listData.items ?? listData.resultados ?? [];
+    const total = listData.total ?? items.length;
+    const tamanioPagina =
+      listData.tamanioPagina ?? items.length;
+
+    /* -------------------------------------------------
+       2️⃣ ENRIQUECIMIENTO (GET medicamento)
+       ------------------------------------------------- */
+
+    const detailedItems = await Promise.all(
+      items.map(async (item: any) => {
+        const nregistro = item.nregistro;
+        if (!nregistro) return null;
+
+        const detailUrl = `${CIMA_BASE_URL}/medicamento?nregistro=${nregistro}`;
+
+        try {
+          const detailRes = await fetch(detailUrl, {
+            headers: { Accept: "application/json" },
+          });
+
+          if (!detailRes.ok) return null;
+
+          const detailData = await detailRes.json();
+
+          // 🔑 NORMALIZACIÓN ÚNICA
+          return normalizeMedication(detailData);
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const cleanItems = detailedItems.filter(Boolean);
 
     return NextResponse.json(
       {
-        source: "CIMA",
-        fetchedAt: new Date().toISOString(),
-        pagina: data.pagina,
-        total: data.total,
-        tamanioPagina: data.tamanioPagina,
-        items: normalized,
+        items: cleanItems,
+        total,
+        tamanioPagina,
       },
       { status: 200 }
     );
-  } catch (error) {
-    console.error("CIMA ERROR:", error);
+  } catch (e) {
+    console.error("CIMA medications error:", e);
     return NextResponse.json(
-      { error: "Error interno consultando CIMA" },
-      { status: 500 }
+      { items: [], total: 0, tamanioPagina: 0 },
+      { status: 200 }
     );
   }
 }

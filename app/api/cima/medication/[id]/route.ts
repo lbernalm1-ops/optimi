@@ -2,56 +2,47 @@ import { NextRequest, NextResponse } from "next/server";
 
 const CIMA_BASE_URL = "https://cima.aemps.es/cima/rest";
 
-export async function GET(
-  req: NextRequest,
-  context: { params: { id: string } }
-) {
-  const { id } = context.params;
+function isValidNregistro(id: string) {
+  return /^\d{5,6}$/.test(id);
+}
 
-  if (!id) {
-    return NextResponse.json(
-      { error: "El parámetro 'id' es obligatorio (nregistro o CN)." },
-      { status: 400 }
-    );
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const id = params.id;
+
+  // ✅ no rompas el frontend: devuelve vacío si no parece nregistro
+  if (!isValidNregistro(id)) {
+    return NextResponse.json({ excipientes: [] }, { status: 200 });
   }
 
-  const searchParams = new URL(req.url).searchParams;
-  const by = searchParams.get("by") ?? "nregistro"; // nregistro | cn
-
-  const paramName = by === "cn" ? "cn" : "nregistro";
-  const url = `${CIMA_BASE_URL}/medicamento?${paramName}=${id}`;
+  const url = `${CIMA_BASE_URL}/medicamento?nregistro=${encodeURIComponent(id)}`;
 
   try {
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 3600 },
+      // cache: "no-store", // si quieres evitar cache de Next en dev
     });
 
+    // ✅ NO devuelvas 400 al navegador: devuelve vacío y listo
     if (!res.ok) {
-      return NextResponse.json(
-        { error: "No se pudo obtener el medicamento de CIMA." },
-        { status: 404 }
-      );
+      return NextResponse.json({ excipientes: [] }, { status: 200 });
     }
 
     const data = await res.json();
 
-    return NextResponse.json(
-      {
-        source: "AEMPS-CIMA",
-        fetchedAt: new Date().toISOString(),
-        id,
-        by,
-        item: data,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("[MEDICATION by ID endpoint] Error:", error);
+    // En el JSON de CIMA, "excipientes" es una lista de objetos.
+    // Si tú quieres solo strings, mapeamos a nombre:
+    const excipientes = Array.isArray(data?.excipientes)
+      ? data.excipientes
+          .map((e: any) => e?.nombre)
+          .filter((x: any) => typeof x === "string" && x.trim().length > 0)
+      : [];
 
-    return NextResponse.json(
-      { error: "Error de conexión con CIMA." },
-      { status: 500 }
-    );
+    return NextResponse.json({ excipientes }, { status: 200 });
+  } catch (e) {
+    console.error("MEDICATION ERROR:", e);
+    return NextResponse.json({ excipientes: [] }, { status: 200 });
   }
 }

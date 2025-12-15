@@ -19,32 +19,38 @@ export function normalizeMedication(m: any) {
     : null;
 
   /* =========================================
-     PRESENTACIONES COMERCIALIZADAS (FILTRO BASE)
+     PRESENTACIONES COMERCIALIZADAS
      ========================================= */
+
+  const cprescHospital =
+    typeof m.cpresc === "string" &&
+    m.cpresc.toLowerCase().includes("hospital");
 
   const presentacionesComerc = Array.isArray(m.presentaciones)
     ? m.presentaciones.filter((p: any) => p.comerc === true)
     : [];
 
-  // ⛔️ Si no hay ninguna presentación comercializada → NO EXISTE
+  // ⛔️ Si no hay ninguna presentación comercializada → no existe
   if (presentacionesComerc.length === 0) {
     return null;
   }
 
   /* =========================================
-     CLASIFICACIÓN
+     PRESENTACIONES NORMALIZADAS (CLASIFICACIÓN REAL)
      ========================================= */
 
-  // 🔴 Hospitalario si:
-  // - cpresc contiene "hospital"
-  // - O existe algún envase clínico
-  const esHospitalario =
-    (typeof m.cpresc === "string" &&
-      m.cpresc.toLowerCase().includes("hospital")) ||
-    presentacionesComerc.some((p: any) => p.envaseClinico === true);
+  const presentaciones = presentacionesComerc.map((p: any) => {
+    const esHospitalaria = cprescHospital || p.envaseClinico === true;
 
-  // 🟢 Comunitario = no hospitalario
-  const esComunitario = !esHospitalario;
+    return {
+      cn: p.cn ?? "",
+      nombre: p.nombre ? toSentenceCase(p.nombre) : null,
+      comerc: true,
+      psum: Boolean(p.psum),
+      envaseClinico: Boolean(p.envaseClinico),
+      tipoUso: esHospitalaria ? "hospitalario" : "comunitario",
+    };
+  });
 
   /* =========================================
      NORMALIZACIÓN FINAL
@@ -97,15 +103,9 @@ export function normalizeMedication(m: any) {
       : [],
 
     // -------------------------------
-    // PRESENTACIONES (SOLO COMERCIALIZADAS)
+    // PRESENTACIONES (YA CLASIFICADAS)
     // -------------------------------
-    presentaciones: presentacionesComerc.map((p: any) => ({
-      cn: p.cn ?? "",
-      nombre: p.nombre ? toSentenceCase(p.nombre) : null,
-      comerc: true,
-      psum: Boolean(p.psum),
-      envaseClinico: Boolean(p.envaseClinico),
-    })),
+    presentaciones,
 
     // -------------------------------
     // ATC
@@ -148,12 +148,6 @@ export function normalizeMedication(m: any) {
     triangulo: Boolean(m.triangulo),
     conducir: Boolean(m.conduc),
     noSustituible: m?.nosustituible?.nombre ?? null,
-
-    // -------------------------------
-    // CLASIFICACIÓN FINAL
-    // -------------------------------
-    esHospitalario,
-    esComunitario,
 
     // -------------------------------
     // FECHA

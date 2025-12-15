@@ -22,6 +22,7 @@ type Medication = {
     comerc: boolean;
     cn: string;
     nombre?: string;
+    tipoUso: "comunitario" | "hospitalario";
   }[];
   receta?: boolean;
   labtitular: string;
@@ -38,9 +39,6 @@ type Medication = {
     prospecto?: string | null;
   };
 
-  // 👇 AQUÍ
-  esComunitario?: boolean;
-  esHospitalario?: boolean;
 };
 
 /* =======================
@@ -116,11 +114,18 @@ export default function MedicationsPage() {
   const [sinGluten, setSinGluten] = useState(false);
   const [sinLactosa, setSinLactosa] = useState(false);
   const [sinFructosa, setSinFructosa] = useState(false);
-
+  const [tipoMedicamento, setTipoMedicamento] = useState<"comunitario" | "institucional" | "ambos">("ambos");
   const [openPresentations, setOpenPresentations] = useState<Record<string, boolean>>({});
-  type TipoMedicamento = "comunitario" | "hospitalario" | "ambos";
-    const [tipoMedicamento, setTipoMedicamento] =
-     useState<TipoMedicamento>("comunitario");
+  const [principiosSeleccionados, setPrincipiosSeleccionados] = useState<string[]>([]);
+
+    function togglePrincipioActivo(nombre: string) {
+    setPrincipiosSeleccionados((prev) =>
+      prev.includes(nombre)
+        ? prev.filter((n) => n !== nombre)
+        : [...prev, nombre]
+    );
+  }
+
   const PAGE_SIZE = 20;
   const [page, setPage] = useState(1);
 
@@ -136,6 +141,7 @@ export default function MedicationsPage() {
       setItems([]);
       return;
     }
+  
 
    
 
@@ -179,17 +185,34 @@ export default function MedicationsPage() {
 const filtered = useMemo(() => {
   let list = [...items];
 
-// 🔑 filtro comunitario / hospitalario / ambos
-if (tipoMedicamento === "comunitario") {
-  list = list.filter((m) => m.esComunitario === true);
-}
+// 🔑 filtrar PRESENTACIONES según tipo de uso
+list = list
+  .map((m) => {
+    if (!m.presentaciones) return m;
 
-if (tipoMedicamento === "hospitalario") {
-  list = list.filter((m) => m.esHospitalario === true);
-}
+    let presentacionesFiltradas = m.presentaciones;
 
-// "ambos" => no filtra
+    if (tipoMedicamento === "comunitario") {
+      presentacionesFiltradas = m.presentaciones.filter(
+        (p) => p.tipoUso === "comunitario"
+      );
+    }
 
+    if (tipoMedicamento === "institucional") {
+      presentacionesFiltradas = m.presentaciones.filter(
+        (p) => p.tipoUso === "hospitalario"
+      );
+    }
+
+    return {
+      ...m,
+      presentaciones: presentacionesFiltradas,
+    };
+  })
+  // ⛔️ si tras filtrar no queda ninguna presentación → fuera
+  .filter((m) => m.presentaciones && m.presentaciones.length > 0);
+
+  
 
   const q = debouncedQuery.toLowerCase();
 
@@ -210,16 +233,44 @@ if (tipoMedicamento === "hospitalario") {
       return byName || byActive || byCN;
     });
   }
+// 🔑 filtro por principios activos seleccionados
+if (principiosSeleccionados.length > 0) {
+  list = list.filter((m) =>
+    principiosSeleccionados.some((pa) =>
+      m.principioActivo
+        ?.toLowerCase()
+        .includes(pa.toLowerCase())
+    )
+  );
+}
 
   if (sinGluten) list = list.filter((m) => !hasGluten(m.excipientes));
   if (sinLactosa) list = list.filter((m) => !hasLactose(m.excipientes));
   if (sinFructosa) list = list.filter((m) => !hasFructose(m.excipientes));
 
   return list;
-}, [items, debouncedQuery, sinGluten, sinLactosa, sinFructosa]);
+}, [items, debouncedQuery, sinGluten, sinLactosa, sinFructosa, tipoMedicamento, principiosSeleccionados,]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+// 🔑lista de principios activos disponibles por Página
+
+const principiosActivosDisponibles = useMemo(() => {
+  const map = new Map<string, number>();
+
+  filtered.forEach((m) => {
+    if (!m.principioActivo) return;
+
+    const key = m.principioActivo.trim();
+
+    map.set(key, (map.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(map.entries())
+    .map(([nombre, count]) => ({ nombre, count }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+}, [filtered]);
 
 
   /* =======================
@@ -235,7 +286,8 @@ if (tipoMedicamento === "hospitalario") {
 
     {/* BUSCADOR */}
 <section className="rounded-xl border bg-white p-4 space-y-3">
-  <div className="relative">
+ <div className="flex gap-2 items-stretch">
+    <div className="relative grow">
     <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
 
     <input
@@ -260,6 +312,23 @@ if (tipoMedicamento === "hospitalario") {
       "
     />
   </div>
+ <button
+    type="button"
+    className="
+      rounded-md
+      bg-sky-600
+      px-4
+      py-2
+      text-sm
+      text-white
+      hover:bg-sky-700
+      active:bg-sky-800
+    "
+  >
+    Buscar
+  </button>
+</div>
+
 
   <p className="text-xs text-slate-400">
     Ejemplos:{" "}
@@ -267,6 +336,56 @@ if (tipoMedicamento === "hospitalario") {
     <span className="font-mono">nifedipino</span>,{" "}
     <span className="font-mono">603340</span>
   </p>
+
+<section className="rounded-xl border bg-white p-3 max-w-md">
+  <h3 className="mb-2 text-xs font-semibold text-slate-700">
+    Principios activos ({principiosActivosDisponibles.length})
+  </h3>
+
+  <div className="max-h-56 overflow-y-auto rounded-md border">
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-slate-50 text-[11px]">
+        <tr>
+          <th className="px-2 py-1 text-left font-medium">
+            Principio activo
+          </th>
+          <th className="px-2 py-1 text-right font-medium">
+            Nº
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {principiosActivosDisponibles.map((pa) => (
+          <tr
+                key={pa.nombre}
+                onClick={() => togglePrincipioActivo(pa.nombre)}
+                className={`
+                  border-t cursor-pointer
+                  hover:bg-slate-100
+                  ${
+                    principiosSeleccionados.includes(pa.nombre)
+                      ? "bg-sky-100 text-sky-800 font-semibold"
+                      : ""
+                  }
+                `}
+              >
+
+            <td className="px-2 py-1">
+              {pa.nombre}
+            </td>
+            <td className="px-2 py-1 text-right text-slate-500">
+              {pa.count}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+
 <div className="flex gap-4 text-sm">
   <label>
     <input
@@ -280,10 +399,10 @@ if (tipoMedicamento === "hospitalario") {
   <label>
     <input
       type="radio"
-      checked={tipoMedicamento === "hospitalario"}
-      onChange={() => setTipoMedicamento("hospitalario")}
+    checked={tipoMedicamento === "institucional"}
+    onChange={() => setTipoMedicamento("institucional")}
     />{" "}
-    Uso hospitalario
+    Uso institucional
   </label>
 
   <label>

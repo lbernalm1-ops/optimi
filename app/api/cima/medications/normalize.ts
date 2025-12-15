@@ -11,9 +11,44 @@ function formatName(name: string = "") {
 }
 
 export function normalizeMedication(m: any) {
+  /* =========================================
+     FECHA AUTORIZACIÓN
+     ========================================= */
   const fechaAutorizacion = m?.estado?.aut
     ? new Date(m.estado.aut).toISOString().split("T")[0]
     : null;
+
+  /* =========================================
+     PRESENTACIONES COMERCIALIZADAS (FILTRO BASE)
+     ========================================= */
+
+  const presentacionesComerc = Array.isArray(m.presentaciones)
+    ? m.presentaciones.filter((p: any) => p.comerc === true)
+    : [];
+
+  // ⛔️ Si no hay ninguna presentación comercializada → NO EXISTE
+  if (presentacionesComerc.length === 0) {
+    return null;
+  }
+
+  /* =========================================
+     CLASIFICACIÓN
+     ========================================= */
+
+  // 🔴 Hospitalario si:
+  // - cpresc contiene "hospital"
+  // - O existe algún envase clínico
+  const esHospitalario =
+    (typeof m.cpresc === "string" &&
+      m.cpresc.toLowerCase().includes("hospital")) ||
+    presentacionesComerc.some((p: any) => p.envaseClinico === true);
+
+  // 🟢 Comunitario = no hospitalario
+  const esComunitario = !esHospitalario;
+
+  /* =========================================
+     NORMALIZACIÓN FINAL
+     ========================================= */
 
   return {
     // -------------------------------
@@ -30,22 +65,22 @@ export function normalizeMedication(m: any) {
       ? toSentenceCase(m.vtm.nombre)
       : null,
 
-// -------------------------------
-// DOSIS
-// -------------------------------
-dosis: Array.isArray(m.principiosActivos) && m.principiosActivos.length > 0
-  ? m.principiosActivos
-      .map((p: any) => {
-        if (!p.cantidad || !p.unidad) return null;
-        return `${p.cantidad} ${p.unidad}`;
-      })
-      .filter(Boolean)
-      .join(" + ")
-  : null,
+    // -------------------------------
+    // DOSIS
+    // -------------------------------
+    dosis:
+      Array.isArray(m.principiosActivos) && m.principiosActivos.length > 0
+        ? m.principiosActivos
+            .map((p: any) =>
+              p.cantidad && p.unidad ? `${p.cantidad} ${p.unidad}` : null
+            )
+            .filter(Boolean)
+            .join(" + ")
+        : null,
 
-// -------------------------------
-// FORMAS
-// -------------------------------
+    // -------------------------------
+    // FORMAS FARMACÉUTICAS
+    // -------------------------------
     formaFarmaceutica: m?.formaFarmaceutica?.nombre
       ? toSentenceCase(m.formaFarmaceutica.nombre)
       : null,
@@ -62,17 +97,15 @@ dosis: Array.isArray(m.principiosActivos) && m.principiosActivos.length > 0
       : [],
 
     // -------------------------------
-    // PRESENTACIONES
+    // PRESENTACIONES (SOLO COMERCIALIZADAS)
     // -------------------------------
-presentaciones: Array.isArray(m.presentaciones)
-  ? m.presentaciones.map((p: any) => ({
+    presentaciones: presentacionesComerc.map((p: any) => ({
       cn: p.cn ?? "",
       nombre: p.nombre ? toSentenceCase(p.nombre) : null,
-      comerc: Boolean(p.comerc),
+      comerc: true,
       psum: Boolean(p.psum),
-    }))
-  : [],
-
+      envaseClinico: Boolean(p.envaseClinico),
+    })),
 
     // -------------------------------
     // ATC
@@ -95,14 +128,12 @@ presentaciones: Array.isArray(m.presentaciones)
       : { fichaTecnica: null, prospecto: null },
 
     // -------------------------------
-    // EXCIPIENTES (CLAVE)
+    // EXCIPIENTES
     // -------------------------------
     excipientes: Array.isArray(m.excipientes)
       ? m.excipientes
           .map((e: any) =>
-            typeof e?.nombre === "string"
-              ? e.nombre.toLowerCase()
-              : null
+            typeof e?.nombre === "string" ? e.nombre.toLowerCase() : null
           )
           .filter(Boolean)
       : [],
@@ -118,6 +149,11 @@ presentaciones: Array.isArray(m.presentaciones)
     conducir: Boolean(m.conduc),
     noSustituible: m?.nosustituible?.nombre ?? null,
 
+    // -------------------------------
+    // CLASIFICACIÓN FINAL
+    // -------------------------------
+    esHospitalario,
+    esComunitario,
 
     // -------------------------------
     // FECHA

@@ -18,10 +18,11 @@ type Medication = {
   formaFarmaceuticaSimplificada?: string;
   viasAdministracion?: string[];
   presentaciones?: {
-    psum: any;
-    comerc: boolean; cn: string; nombre?: string 
-}[];
-  comerc?: boolean;
+    psum: boolean;
+    comerc: boolean;
+    cn: string;
+    nombre?: string;
+  }[];
   receta?: boolean;
   labtitular: string;
   fechaAutorizacion?: string;
@@ -31,12 +32,15 @@ type Medication = {
   huerfano?: boolean;
   conducir?: boolean;
   noSustituible?: string;
-  psum?: boolean;
   excipientes?: string[];
   documentos?: {
     fichaTecnica?: string | null;
     prospecto?: string | null;
   };
+
+  // 👇 AQUÍ
+  esComunitario?: boolean;
+  esHospitalario?: boolean;
 };
 
 /* =======================
@@ -114,7 +118,9 @@ export default function MedicationsPage() {
   const [sinFructosa, setSinFructosa] = useState(false);
 
   const [openPresentations, setOpenPresentations] = useState<Record<string, boolean>>({});
-
+  type TipoMedicamento = "comunitario" | "hospitalario" | "ambos";
+    const [tipoMedicamento, setTipoMedicamento] =
+     useState<TipoMedicamento>("comunitario");
   const PAGE_SIZE = 20;
   const [page, setPage] = useState(1);
 
@@ -130,6 +136,8 @@ export default function MedicationsPage() {
       setItems([]);
       return;
     }
+
+   
 
     const ac = new AbortController();
 
@@ -171,11 +179,17 @@ export default function MedicationsPage() {
 const filtered = useMemo(() => {
   let list = [...items];
 
-  // ⛔️ excluir medicamentos SIN ninguna presentación comercializada
-  list = list.filter((m) =>
-    Array.isArray(m.presentaciones) &&
-    m.presentaciones.some((p) => p.comerc === true)
-  );
+// 🔑 filtro comunitario / hospitalario / ambos
+if (tipoMedicamento === "comunitario") {
+  list = list.filter((m) => m.esComunitario === true);
+}
+
+if (tipoMedicamento === "hospitalario") {
+  list = list.filter((m) => m.esHospitalario === true);
+}
+
+// "ambos" => no filtra
+
 
   const q = debouncedQuery.toLowerCase();
 
@@ -253,6 +267,35 @@ const filtered = useMemo(() => {
     <span className="font-mono">nifedipino</span>,{" "}
     <span className="font-mono">603340</span>
   </p>
+<div className="flex gap-4 text-sm">
+  <label>
+    <input
+      type="radio"
+      checked={tipoMedicamento === "comunitario"}
+      onChange={() => setTipoMedicamento("comunitario")}
+    />{" "}
+    Farmacia comunitaria
+  </label>
+
+  <label>
+    <input
+      type="radio"
+      checked={tipoMedicamento === "hospitalario"}
+      onChange={() => setTipoMedicamento("hospitalario")}
+    />{" "}
+    Uso hospitalario
+  </label>
+
+  <label>
+    <input
+      type="radio"
+      checked={tipoMedicamento === "ambos"}
+      onChange={() => setTipoMedicamento("ambos")}
+    />{" "}
+    Ambos
+  </label>
+</div>
+
 
   <div className="flex gap-4 text-sm">
     <label><input type="checkbox" checked={sinGluten} onChange={e=>setSinGluten(e.target.checked)} /> Sin gluten 🌾</label>
@@ -283,14 +326,14 @@ const filtered = useMemo(() => {
               </thead>
 
               <tbody>
-                {pageItems.map((m) => (
+                {pageItems.map((m) => {
+                  const comercializadas = m.presentaciones ?? [];
+                  return (
                   <tr key={m.nregistro} className="border-b align-top">
                     {/* CN + DOCS */}
 <td className="px-2 py-2 text-xs text-left align-top">
   {(() => {
-    const comercializadas =
-      m.presentaciones?.filter((p) => p.comerc === true) ?? [];
-
+  
     if (comercializadas.length === 0) {
       return <span className="text-slate-400">—</span>;
     }
@@ -433,7 +476,8 @@ const filtered = useMemo(() => {
                       {hasFructose(m.excipientes) && "🍬"}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

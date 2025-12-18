@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 /* =======================
    TIPOS
@@ -106,10 +106,26 @@ export default function MedicationsPage() {
   const searchParams = useSearchParams();
   const atcFromUrl = searchParams.get("atc");
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  // input separados para Nombre / Principio activo / CN
+  const [queryName, setQueryName] = useState("");
+  const [queryPrincipio, setQueryPrincipio] = useState("");
+  const [queryCN, setQueryCN] = useState("");
+
+  const [debouncedQueryName, setDebouncedQueryName] = useState("");
+  const [debouncedQueryPrincipio, setDebouncedQueryPrincipio] = useState("");
+  const [debouncedQueryCN, setDebouncedQueryCN] = useState("");
+  // Si el usuario pulsa "Buscar", forzamos una búsqueda inmediata
+  const [manualSearch, setManualSearch] = useState<{
+    name?: string;
+    principle?: string;
+    cn?: string;
+  } | null>(null);
+  // Vemos qué campo está activo para gestionar la deshabilitación de los otros
+  const [activeField, setActiveField] = useState<"name" | "principio" | "cn" | null>(null);
   const [items, setItems] = useState<Medication[]>([]);
   const [loading, setLoading] = useState(false);
+  // Comprueba si ya se ha realizado una búsqueda para mostrar "no results"
+  const [searched, setSearched] = useState(false);
 
   const [sinGluten, setSinGluten] = useState(false);
   const [sinLactosa, setSinLactosa] = useState(false);
@@ -129,25 +145,63 @@ export default function MedicationsPage() {
   const PAGE_SIZE = 20;
   const [page, setPage] = useState(1);
 
-  /* ---------- debounce ---------- */
+  /* ---------- debounce (three fields) ---------- */
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    const t = setTimeout(() => setDebouncedQueryName(queryName.trim()), 300);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [queryName]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQueryPrincipio(queryPrincipio.trim()), 300);
+    return () => clearTimeout(t);
+  }, [queryPrincipio]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQueryCN(queryCN.trim()), 300);
+    return () => clearTimeout(t);
+  }, [queryCN]);
+
+  // controla el campo activo para deshabilitar los otros dos
+  useEffect(() => {
+    const nonEmpty = [
+      queryName.trim() ? "name" : null,
+      queryPrincipio.trim() ? "principio" : null,
+      queryCN.trim() ? "cn" : null,
+    ].filter(Boolean) as ("name" | "principio" | "cn")[];
+
+    if (nonEmpty.length === 1) setActiveField(nonEmpty[0]);
+    if (nonEmpty.length === 0) setActiveField(null);
+  }, [queryName, queryPrincipio, queryCN]);
+
+  // UI helpers
+  const inputsLocked =
+    queryName.trim().length > 0 || queryPrincipio.trim().length > 0 || queryCN.trim().length > 0;
+
+  const hasValidInput =
+    queryName.trim().length >= 2 || queryPrincipio.trim().length >= 2 || queryCN.trim().length >= 2 || !!atcFromUrl;
 
   /* ---------- fetch medicamentos ---------- */
   useEffect(() => {
-    if (debouncedQuery.length < 2 && !atcFromUrl) {
+    const name = manualSearch?.name ?? debouncedQueryName;
+    const principle = manualSearch?.principle ?? debouncedQueryPrincipio;
+    const cn = manualSearch?.cn ?? debouncedQueryCN;
+
+    // 🔑 Validación de entrada: al menos 2 caracteres en uno de los campos
+    const anyValid = (name && name.length >= 2) || (principle && principle.length >= 2) || (cn && cn.length >= 2);
+    if (!anyValid && !atcFromUrl) {
       setItems([]);
+      setSearched(false);
       return;
     }
-  
-
-   
 
     const ac = new AbortController();
 
     const fetchAll = async () => {
+      // narcar como buscado
+      setSearched(true);
+      setItems([]);
+      setOpenPresentations({});
+      setPage(1);
       setLoading(true);
       try {
         let p = 1;
@@ -157,7 +211,9 @@ export default function MedicationsPage() {
         do {
           const params = new URLSearchParams();
           params.set("page", String(p));
-          if (debouncedQuery) params.set("q", debouncedQuery);
+          if (name) params.set("name", name);
+          if (principle) params.set("principle", principle);
+          if (cn) params.set("cn", cn);
           if (atcFromUrl) params.set("atc", atcFromUrl);
 
           const res = await fetch(`/api/cima/medications?${params}`, {
@@ -172,6 +228,7 @@ export default function MedicationsPage() {
 
         setItems(all);
         setPage(1);
+        setManualSearch(null);
       } finally {
         if (!ac.signal.aborted) setLoading(false);
       }
@@ -179,7 +236,7 @@ export default function MedicationsPage() {
 
     fetchAll();
     return () => ac.abort();
-  }, [debouncedQuery, atcFromUrl]);
+  }, [debouncedQueryName, debouncedQueryPrincipio, debouncedQueryCN, atcFromUrl, manualSearch]);
 
   /* ---------- filtros ---------- */
 const filtered = useMemo(() => {
@@ -214,23 +271,19 @@ list = list
 
   
 
-  const q = debouncedQuery.toLowerCase();
+  const nameQ = debouncedQueryName.toLowerCase();
+  const paQ = debouncedQueryPrincipio.toLowerCase();
+  const cnQ = debouncedQueryCN.trim();
 
-
-  if (q) {
-    const isNumeric = /^\d+$/.test(q);
+  if (nameQ || paQ || cnQ) {
+    const isNumericCN = /^\d+$/.test(cnQ);
 
     list = list.filter((m) => {
-      const byName =
-        m.nombre?.toLowerCase().includes(q);
+      const byName = nameQ && m.nombre?.toLowerCase().includes(nameQ);
+      const byActive = paQ && m.principioActivo?.toLowerCase().includes(paQ);
+      const byCN = cnQ && isNumericCN && matchesCN(m, cnQ);
 
-      const byActive =
-        m.principioActivo?.toLowerCase().includes(q);
-
-      const byCN =
-        isNumeric && matchesCN(m, q);
-
-      return byName || byActive || byCN;
+      return !!(byName || byActive || byCN);
     });
   }
 // 🔑 filtro por principios activos seleccionados
@@ -249,7 +302,17 @@ if (principiosSeleccionados.length > 0) {
   if (sinFructosa) list = list.filter((m) => !hasFructose(m.excipientes));
 
   return list;
-}, [items, debouncedQuery, sinGluten, sinLactosa, sinFructosa, tipoMedicamento, principiosSeleccionados,]);
+}, [
+  items,
+  debouncedQueryName,
+  debouncedQueryPrincipio,
+  debouncedQueryCN,
+  sinGluten,
+  sinLactosa,
+  sinFructosa,
+  tipoMedicamento,
+  principiosSeleccionados,
+]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -287,34 +350,161 @@ const principiosActivosDisponibles = useMemo(() => {
     {/* BUSCADOR */}
 <section className="rounded-xl border bg-white p-4 space-y-3">
  <div className="flex gap-2 items-stretch">
-    <div className="relative grow">
-    <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+     <div className="grow">
+        <div className="flex gap-2 items-stretch">
+          <div className="relative flex-1 min-w-0" title={inputsLocked && activeField !== "name" ? "Deshabilitado porque otro campo contiene texto" : undefined}>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
 
-    <input
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-      placeholder="Buscar por nombre, principio activo o CN…"
-      className="
-        w-full
-        rounded-md
-        border
-        border-slate-300
-        bg-white
-        py-2
-        pl-11
-        pr-3
-        text-sm
-        placeholder-slate-400
-        focus:border-sky-500
-        focus:outline-none
-        focus:ring-2
-        focus:ring-sky-200
-      "
-    />
-  </div>
+            <input
+              value={queryName}
+              onFocus={() => setActiveField("name")}
+              onChange={(e) => {
+                setQueryName(e.target.value);
+                setActiveField("name");
+              }}
+              disabled={inputsLocked && activeField !== "name"}
+              placeholder="Nombre"
+              className={`
+                w-full
+                rounded-md
+                border
+                border-slate-300
+                bg-white
+                py-2
+                pl-11
+                pr-3
+                text-sm
+                placeholder-slate-400
+                focus:border-sky-500
+                focus:outline-none
+                focus:ring-2
+                focus:ring-sky-200
+                ${inputsLocked && activeField !== "name" ? "opacity-60 bg-slate-50 cursor-not-allowed" : ""}
+              `}
+            />
+              {queryName.length > 0 && activeField === "name" && (
+                <button
+                  type="button"
+                  aria-label="Limpiar nombre"
+                  onClick={() => {
+                    setQueryName("");
+                    setActiveField(null);
+                    setManualSearch(null);
+                    setSearched(false);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 px-2 py-1 rounded"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+          </div>
+
+          <div className="relative flex-1 min-w-0" title={inputsLocked && activeField !== "principio" ? "Deshabilitado porque otro campo contiene texto" : undefined}>
+            <input
+              value={queryPrincipio}
+              onFocus={() => setActiveField("principio")}
+              onChange={(e) => {
+                setQueryPrincipio(e.target.value);
+                setActiveField("principio");
+              }}
+              disabled={inputsLocked && activeField !== "principio"}
+              placeholder="Principio activo"
+              className={`
+                w-full
+                rounded-md
+                border
+                border-slate-300
+                bg-white
+                py-2
+                px-3
+                text-sm
+                placeholder-slate-400
+                focus:border-sky-500
+                focus:outline-none
+                focus:ring-2
+                focus:ring-sky-200
+                ${inputsLocked && activeField !== "principio" ? "opacity-60 bg-slate-50 cursor-not-allowed" : ""}
+              `}
+            />
+            {queryPrincipio.length > 0 && activeField === "principio" && (
+              <button
+                type="button"
+                aria-label="Limpiar principio activo"
+                onClick={() => {
+                  setQueryPrincipio("");
+                  setActiveField(null);
+                  setManualSearch(null);
+                    setSearched(false);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 px-2 py-1 rounded"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="relative flex-1 min-w-0" title={inputsLocked && activeField !== "cn" ? "Deshabilitado porque otro campo contiene texto" : undefined}>
+            <input
+              value={queryCN}
+              onFocus={() => setActiveField("cn")}
+              onChange={(e) => {
+                setQueryCN(e.target.value);
+                setActiveField("cn");
+              }}
+              disabled={inputsLocked && activeField !== "cn"}
+              placeholder="CN"
+              className={`
+                w-full
+                rounded-md
+                border
+                border-slate-300
+                bg-white
+                py-2
+                px-3
+                text-sm
+                placeholder-slate-400
+                focus:border-sky-500
+                focus:outline-none
+                focus:ring-2
+                focus:ring-sky-200
+                ${inputsLocked && activeField !== "cn" ? "opacity-60 bg-slate-50 cursor-not-allowed" : ""}
+              `}
+            />
+            {queryCN.length > 0 && activeField === "cn" && (
+                <button
+                type="button"
+                aria-label="Limpiar CN"
+                onClick={() => {
+                  setQueryCN("");
+                  setActiveField(null);
+                  setManualSearch(null);
+                    setSearched(false);
+                }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 px-2 py-1 rounded"
+              >
+                  <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
  <button
     type="button"
-    className="
+    onClick={() => {
+      // forzamos búsqueda inmediata
+      setManualSearch({
+        name: queryName.trim(),
+        principle: queryPrincipio.trim(),
+        cn: queryCN.trim(),
+      });
+      // Limpiamos resultados visibles inmediatamente
+      setItems([]);
+      setOpenPresentations({});
+      setPage(1);
+    }}
+    disabled={!hasValidInput || loading}
+    title={!hasValidInput && !atcFromUrl ? "Introduce al menos 2 caracteres en Nombre/Principio/CN" : undefined}
+    className={`
       rounded-md
       bg-sky-600
       px-4
@@ -323,9 +513,23 @@ const principiosActivosDisponibles = useMemo(() => {
       text-white
       hover:bg-sky-700
       active:bg-sky-800
-    "
+      flex-shrink-0
+      w-28
+      flex
+      items-center
+      justify-center
+      gap-2
+      ${(!hasValidInput || loading) ? 'opacity-50 cursor-not-allowed' : ''}
+    `}
   >
-    Buscar
+    {loading ? (
+      <>
+        <span className="inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden />
+        <span className="sr-only">Cargando…</span>
+      </>
+    ) : (
+      <span>Buscar</span>
+    )}
   </button>
 </div>
 
@@ -427,7 +631,13 @@ const principiosActivosDisponibles = useMemo(() => {
       <section className="rounded-xl border bg-white p-4">
         {loading && <p className="text-sm">Cargando…</p>}
 
-        {pageItems.length > 0 && (
+        {!loading && searched && pageItems.length === 0 && (
+          <div className="py-8 text-center text-sm text-slate-500">
+            No se han encontrado resultados para los criterios indicados.
+          </div>
+        )}
+
+        {!loading && pageItems.length > 0 && (
           <div className="overflow-x-auto">
             <table className="min-w-[1550px] table-fixed text-sm">
               <thead className="bg-slate-50 border-b">
